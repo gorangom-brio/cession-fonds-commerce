@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+
 const config: Config = {
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
@@ -15,6 +16,12 @@ const config: Config = {
           800: "#172554",
           900: "#0f172a",
         },
+        border: "#e5e7eb",
+        background: "#ffffff",
+        foreground: "#0f172a",
+        muted: {
+          foreground: "#6b7280",
+        },
         "confidence-high": "#16a34a",
         "confidence-medium": "#d97706",
         "confidence-low": "#dc2626",
@@ -23,4 +30,5 @@ const config: Config = {
   },
   plugins: [],
 };
+
 export default config;
