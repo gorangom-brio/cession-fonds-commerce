@@ -17,38 +17,46 @@ export const supabaseClient = createClient<Database>(
   supabaseAnonKey
 );
 
-export async function createCession() {
+type CessionRow = Database["public"]["Tables"]["cessions"]["Row"];
+type CessionUpdate = Database["public"]["Tables"]["cessions"]["Update"];
+type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
+
+export async function createCession(): Promise<CessionRow> {
   const { data, error } = await supabaseClient
     .from("cessions")
     .insert({ status: "draft" })
     .select()
     .single();
 
-  if (error) {
-    throw new Error(`Erreur création cession : ${error.message}`);
+  if (error || !data) {
+    throw new Error(
+      `Erreur création cession : ${error?.message ?? "aucune donnée renvoyée"}`
+    );
   }
 
-  return data;
+  return data as CessionRow;
 }
 
-export async function getCession(id: string) {
+export async function getCession(id: string): Promise<CessionRow> {
   const { data, error } = await supabaseClient
     .from("cessions")
     .select("*")
     .eq("id", id)
     .single();
 
-  if (error) {
-    throw new Error(`Erreur lecture cession : ${error.message}`);
+  if (error || !data) {
+    throw new Error(
+      `Erreur lecture cession : ${error?.message ?? "cession introuvable"}`
+    );
   }
 
-  return data;
+  return data as CessionRow;
 }
 
 export async function updateCession(
   id: string,
-  updates: Database["public"]["Tables"]["cessions"]["Update"]
-) {
+  updates: CessionUpdate
+): Promise<CessionRow> {
   const { data, error } = await supabaseClient
     .from("cessions")
     .update({
@@ -59,18 +67,20 @@ export async function updateCession(
     .select()
     .single();
 
-  if (error) {
-    throw new Error(`Erreur mise à jour cession : ${error.message}`);
+  if (error || !data) {
+    throw new Error(
+      `Erreur mise à jour cession : ${error?.message ?? "aucune donnée renvoyée"}`
+    );
   }
 
-  return data;
+  return data as CessionRow;
 }
 
 export async function uploadDocument(
   cessionId: string,
   file: File,
   documentType?: string
-) {
+): Promise<DocumentRow> {
   const safeFileName = file.name.replace(/\s+/g, "-");
   const storagePath = `${cessionId}/${Date.now()}-${safeFileName}`;
 
@@ -98,14 +108,16 @@ export async function uploadDocument(
     .select()
     .single();
 
-  if (dbError) {
-    throw new Error(`Erreur enregistrement document : ${dbError.message}`);
+  if (dbError || !data) {
+    throw new Error(
+      `Erreur enregistrement document : ${dbError?.message ?? "aucune donnée renvoyée"}`
+    );
   }
 
-  return data;
+  return data as DocumentRow;
 }
 
-export async function getDocuments(cessionId: string) {
+export async function getDocuments(cessionId: string): Promise<DocumentRow[]> {
   const { data, error } = await supabaseClient
     .from("documents")
     .select("*")
@@ -116,13 +128,13 @@ export async function getDocuments(cessionId: string) {
     throw new Error(`Erreur lecture documents : ${error.message}`);
   }
 
-  return data ?? [];
+  return (data ?? []) as DocumentRow[];
 }
 
 export async function deleteDocument(
   documentId: string,
   storagePath: string
-) {
+): Promise<void> {
   const { error: storageError } = await supabaseClient.storage
     .from("documents")
     .remove([storagePath]);
