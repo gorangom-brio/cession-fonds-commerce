@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Loader2, FileText, AlertCircle, CheckCircle, Brain, ArrowLeft } from "lucide-react";
-import { getDocuments } from "@/lib/supabase";
+import { getDocuments } from "@/lib/supabase/client";
 import type { Document } from "@/lib/types";
 
 type AnalysisStatus = "idle" | "loading" | "success" | "error";

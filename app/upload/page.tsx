@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, FileText, AlertCircle, Loader2, X } from "lucide-react";
-import { createCession, uploadDocument } from "@/lib/supabase";
+import { createCession, uploadDocument } from "@/lib/supabase/client";
 
 interface UploadedFile {
   id: string;

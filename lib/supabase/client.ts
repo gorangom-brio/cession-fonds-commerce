@@ -1,18 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "./database.types";
+import type { Database } from "../database.types";
 
-// Clé publique (anon) — sûr côté navigateur
+/**
+ * Client Supabase côté navigateur — utilise la clé anon publique.
+ * Sûr à importer depuis n'importe quel composant `"use client"`.
+ */
 export const supabaseClient = createClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-// Clé service role — UNIQUEMENT pour les API routes côté serveur
-// Ne jamais importer dans un composant "use client"
-export const supabaseAdmin = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
 // ============================================================================
@@ -39,7 +34,10 @@ export async function getCession(id: string) {
   return data;
 }
 
-export async function updateCession(id: string, updates: Record<string, unknown>) {
+export async function updateCession(
+  id: string,
+  updates: Record<string, unknown>
+) {
   const { data, error } = await supabaseClient
     .from("cessions")
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -54,7 +52,11 @@ export async function updateCession(id: string, updates: Record<string, unknown>
 // DOCUMENTS
 // ============================================================================
 
-export async function uploadDocument(cessionId: string, file: File, documentType?: string) {
+export async function uploadDocument(
+  cessionId: string,
+  file: File,
+  documentType?: string
+) {
   const storagePath = `${cessionId}/${Date.now()}-${file.name}`;
 
   const { error: uploadError } = await supabaseClient.storage
@@ -100,19 +102,13 @@ export async function deleteDocument(documentId: string, storagePath: string) {
   const { error: storageError } = await supabaseClient.storage
     .from("documents")
     .remove([storagePath]);
-  if (storageError) throw new Error(`Erreur suppression fichier: ${storageError.message}`);
+  if (storageError)
+    throw new Error(`Erreur suppression fichier: ${storageError.message}`);
 
   const { error: dbError } = await supabaseClient
     .from("documents")
     .delete()
     .eq("id", documentId);
-  if (dbError) throw new Error(`Erreur suppression enregistrement: ${dbError.message}`);
-}
-
-export async function markDocumentAnalysed(documentId: string) {
-  const { error } = await supabaseClient
-    .from("documents")
-    .update({ analyse_effectuee: true })
-    .eq("id", documentId);
-  if (error) throw new Error(`Erreur marquage analyse: ${error.message}`);
+  if (dbError)
+    throw new Error(`Erreur suppression enregistrement: ${dbError.message}`);
 }
