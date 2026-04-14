@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "../database.types";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -12,17 +12,28 @@ if (!supabaseAnonKey) {
   throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY est manquante");
 }
 
-export const supabaseClient = createClient<Database>(
-  supabaseUrl,
-  supabaseAnonKey
-);
-
 type CessionRow = Database["public"]["Tables"]["cessions"]["Row"];
 type CessionUpdate = Database["public"]["Tables"]["cessions"]["Update"];
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
+let browserClient: SupabaseClient<Database> | null = null;
+
+function getSupabaseClient(): SupabaseClient<Database> {
+  if (!browserClient) {
+    browserClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
+  }
+
+  return browserClient;
+}
+
 export async function createCession(): Promise<CessionRow> {
-  const { data, error } = await supabaseClient
+  const { data, error } = await getSupabaseClient()
     .from("cessions")
     .insert({ status: "draft" })
     .select()
@@ -38,7 +49,7 @@ export async function createCession(): Promise<CessionRow> {
 }
 
 export async function getCession(id: string): Promise<CessionRow> {
-  const { data, error } = await supabaseClient
+  const { data, error } = await getSupabaseClient()
     .from("cessions")
     .select("*")
     .eq("id", id)
@@ -57,7 +68,7 @@ export async function updateCession(
   id: string,
   updates: CessionUpdate
 ): Promise<CessionRow> {
-  const { data, error } = await supabaseClient
+  const { data, error } = await getSupabaseClient()
     .from("cessions")
     .update({
       ...updates,
@@ -84,7 +95,7 @@ export async function uploadDocument(
   const safeFileName = file.name.replace(/\s+/g, "-");
   const storagePath = `${cessionId}/${Date.now()}-${safeFileName}`;
 
-  const { error: uploadError } = await supabaseClient.storage
+  const { error: uploadError } = await getSupabaseClient().storage
     .from("documents")
     .upload(storagePath, file, {
       cacheControl: "3600",
@@ -95,7 +106,7 @@ export async function uploadDocument(
     throw new Error(`Erreur upload : ${uploadError.message}`);
   }
 
-  const { data, error: dbError } = await supabaseClient
+  const { data, error: dbError } = await getSupabaseClient()
     .from("documents")
     .insert({
       cession_id: cessionId,
@@ -118,7 +129,7 @@ export async function uploadDocument(
 }
 
 export async function getDocuments(cessionId: string): Promise<DocumentRow[]> {
-  const { data, error } = await supabaseClient
+  const { data, error } = await getSupabaseClient()
     .from("documents")
     .select("*")
     .eq("cession_id", cessionId)
@@ -135,7 +146,7 @@ export async function deleteDocument(
   documentId: string,
   storagePath: string
 ): Promise<void> {
-  const { error: storageError } = await supabaseClient.storage
+  const { error: storageError } = await getSupabaseClient().storage
     .from("documents")
     .remove([storagePath]);
 
@@ -143,7 +154,7 @@ export async function deleteDocument(
     throw new Error(`Erreur suppression fichier : ${storageError.message}`);
   }
 
-  const { error: dbError } = await supabaseClient
+  const { error: dbError } = await getSupabaseClient()
     .from("documents")
     .delete()
     .eq("id", documentId);
