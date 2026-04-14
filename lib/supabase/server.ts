@@ -3,16 +3,26 @@ import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../database.types";
 
-/**
- * Client Supabase côté serveur — utilise la clé service role.
- * Bypass les Row-Level Security policies. UNIQUEMENT pour les API routes
- * et les Server Components. Protégé par `import "server-only"` :
- * toute tentative d'import dans un composant `"use client"` échouera au build.
- */
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl) {
+  throw new Error("NEXT_PUBLIC_SUPABASE_URL est manquante");
+}
+
+if (!supabaseServiceRoleKey) {
+  throw new Error("SUPABASE_SERVICE_ROLE_KEY est manquante");
+}
+
 export const supabaseAdmin = createClient<Database>(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
+  supabaseUrl,
+  supabaseServiceRoleKey,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
 );
 
 export async function markDocumentAnalysed(documentId: string) {
@@ -20,5 +30,43 @@ export async function markDocumentAnalysed(documentId: string) {
     .from("documents")
     .update({ analyse_effectuee: true })
     .eq("id", documentId);
-  if (error) throw new Error(`Erreur marquage analyse: ${error.message}`);
+
+  if (error) {
+    throw new Error(`Erreur marquage analyse : ${error.message}`);
+  }
+}
+
+export async function getDocumentsByCessionId(cessionId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("documents")
+    .select("*")
+    .eq("cession_id", cessionId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Erreur lecture documents serveur : ${error.message}`);
+  }
+
+  return data ?? [];
+}
+
+export async function updateCessionAnalysis(
+  cessionId: string,
+  updates: Database["public"]["Tables"]["cessions"]["Update"]
+) {
+  const { data, error } = await supabaseAdmin
+    .from("cessions")
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", cessionId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Erreur mise à jour analyse cession : ${error.message}`);
+  }
+
+  return data;
 }
