@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
+import DossierStepper from "../DossierStepper";
 
 type Champs = {
   nom: string;
@@ -74,7 +75,9 @@ export default function DossierValidationAvocatPage() {
   if (envoye) {
     return (
       <div className="mx-auto max-w-4xl space-y-8">
-        <div className="space-y-3">
+        <DossierStepper id={id} />
+
+      <div className="space-y-3">
           <p className="text-sm font-medium text-navy-700">Dossier {id}</p>
           <h1 className="text-4xl font-bold text-navy-900">
             Demande enregistrée
@@ -116,6 +119,8 @@ export default function DossierValidationAvocatPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-10">
+      <DossierStepper id={id} />
+
       {/* En-tête */}
       <div className="space-y-3">
         <p className="text-sm font-medium text-navy-700">Dossier {id}</p>

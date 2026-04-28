@@ -1,4 +1,5 @@
 import Link from "next/link";
+import DossierStepper from "./DossierStepper";
 
 type DossierDashboardPageProps = {
   params: Promise<{ id: string }>;
@@ -34,6 +35,8 @@ export default async function DossierDashboardPage({
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
+      <DossierStepper id={id} />
+
       <div className="space-y-3">
         <p className="text-sm font-medium text-navy-700">Dossier {id}</p>
         <h1 className="text-4xl font-bold text-navy-900">
