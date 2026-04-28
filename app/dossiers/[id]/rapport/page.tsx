@@ -1,9 +1,11 @@
+"use client";
+
 import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useState } from "react";
 import DossierStepper from "../DossierStepper";
 
-type DossierRapportPageProps = {
-  params: Promise<{ id: string }>;
-};
+// ── Données simulées ────────────────────────────────────────────────────────
 
 const piecesAnalysees = [
   "Bail commercial",
@@ -44,22 +46,10 @@ const pointsAttention = [
 ];
 
 const risques = [
-  {
-    niveau: "Élevé" as const,
-    texte: "Clause de cession du bail non vérifiée — risque de blocage de la cession.",
-  },
-  {
-    niveau: "Modéré" as const,
-    texte: "Pièces fiscales manquantes — risque de remise en cause de la valorisation.",
-  },
-  {
-    niveau: "Modéré" as const,
-    texte: "Actifs incorporels non documentés — risque de litige post-cession sur le périmètre transmis.",
-  },
-  {
-    niveau: "À surveiller" as const,
-    texte: "Bilans incomplets (2/3 exercices) — analyse de tendance partielle.",
-  },
+  { niveau: "Élevé" as const, texte: "Clause de cession du bail non vérifiée — risque de blocage de la cession." },
+  { niveau: "Modéré" as const, texte: "Pièces fiscales manquantes — risque de remise en cause de la valorisation." },
+  { niveau: "Modéré" as const, texte: "Actifs incorporels non documentés — risque de litige post-cession sur le périmètre transmis." },
+  { niveau: "À surveiller" as const, texte: "Bilans incomplets (2/3 exercices) — analyse de tendance partielle." },
 ];
 
 const NIVEAU_STYLE: Record<"Élevé" | "Modéré" | "À surveiller", string> = {
@@ -68,10 +58,57 @@ const NIVEAU_STYLE: Record<"Élevé" | "Modéré" | "À surveiller", string> = {
   "À surveiller": "bg-blue-50 border border-blue-200 text-blue-800",
 };
 
-export default async function DossierRapportPage({
-  params,
-}: DossierRapportPageProps) {
-  const { id } = await params;
+const ROLES = [
+  { value: "", label: "Sélectionner votre rôle" },
+  { value: "vendeur", label: "Vendeur" },
+  { value: "acquereur", label: "Acquéreur" },
+  { value: "intermediaire", label: "Intermédiaire" },
+  { value: "autre", label: "Autre" },
+] as const;
+
+// ── Types formulaire ────────────────────────────────────────────────────────
+
+type CaptureChamps = {
+  nom: string;
+  email: string;
+  role: string;
+  telephone: string;
+  consentementRapport: boolean;
+  consentementRecontact: boolean;
+};
+
+const CHAMPS_VIDES: CaptureChamps = {
+  nom: "",
+  email: "",
+  role: "",
+  telephone: "",
+  consentementRapport: false,
+  consentementRecontact: false,
+};
+
+// ── Page ────────────────────────────────────────────────────────────────────
+
+export default function DossierRapportPage() {
+  const { id } = useParams<{ id: string }>();
+  const [champs, setChamps] = useState<CaptureChamps>(CHAMPS_VIDES);
+  const [envoye, setEnvoye] = useState(false);
+
+  const peutSoumettre =
+    champs.nom.trim().length > 0 &&
+    champs.email.trim().length > 0 &&
+    champs.role !== "" &&
+    champs.consentementRapport;
+
+  const set =
+    (champ: keyof CaptureChamps) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      setChamps((prev) => ({ ...prev, [champ]: e.target.value }));
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!peutSoumettre) return;
+    setEnvoye(true);
+  };
 
   return (
     <div className="mx-auto max-w-4xl space-y-10">
@@ -115,9 +152,7 @@ export default async function DossierRapportPage({
 
       {/* Pièces analysées */}
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-navy-900">
-          Pièces analysées
-        </h2>
+        <h2 className="text-xl font-semibold text-navy-900">Pièces analysées</h2>
         <div className="rounded-lg border border-border bg-white p-6">
           <ul className="space-y-2">
             {piecesAnalysees.map((piece) => (
@@ -165,15 +200,10 @@ export default async function DossierRapportPage({
 
       {/* Risques */}
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-navy-900">
-          Risques identifiés
-        </h2>
+        <h2 className="text-xl font-semibold text-navy-900">Risques identifiés</h2>
         <div className="rounded-lg border border-border bg-white divide-y divide-border">
           {risques.map(({ niveau, texte }) => (
-            <div
-              key={texte}
-              className="flex items-start gap-4 px-6 py-4"
-            >
+            <div key={texte} className="flex items-start gap-4 px-6 py-4">
               <span
                 className={`mt-0.5 inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${NIVEAU_STYLE[niveau]}`}
               >
@@ -187,9 +217,7 @@ export default async function DossierRapportPage({
 
       {/* Recommandations */}
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-navy-900">
-          Recommandations
-        </h2>
+        <h2 className="text-xl font-semibold text-navy-900">Recommandations</h2>
         <div className="rounded-lg border border-border bg-white p-6 space-y-3 text-sm text-muted-foreground leading-relaxed">
           <p>
             <strong className="text-navy-900">1. Compléter le dossier</strong>{" "}
@@ -237,18 +265,185 @@ export default async function DossierRapportPage({
         professionnel du droit.
       </div>
 
-      {/* CTA */}
-      <div className="flex flex-wrap items-center gap-4">
-        <Link
-          href={`/dossiers/${id}/validation-avocat`}
-          className="btn-primary"
-        >
-          Demander une validation avocat
-        </Link>
-        <Link href={`/dossiers/${id}/audit`} className="btn-secondary">
-          Revenir à l&apos;audit
-        </Link>
-      </div>
+      {/* ── Capture email ─────────────────────────────────────────────────── */}
+      <section className="rounded-lg border-2 border-navy-200 bg-navy-50 p-6 space-y-5">
+        <div className="space-y-1">
+          <h2 className="text-xl font-semibold text-navy-900">
+            Recevoir mon rapport d&apos;audit PDF
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Le rapport complet sera généré et envoyé à votre adresse email.
+            Renseignez vos coordonnées pour le recevoir.
+          </p>
+        </div>
+
+        {envoye ? (
+          /* ── Confirmation ── */
+          <div className="space-y-5">
+            <div className="rounded-lg border border-confidence-high/30 bg-confidence-high/10 p-6 space-y-2 text-center">
+              <p className="text-2xl font-bold text-confidence-high">✓</p>
+              <p className="text-base font-semibold text-navy-900">
+                Votre demande de rapport PDF a bien été enregistrée en mode démo.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Dans la version finale, le rapport PDF sera généré et envoyé
+                automatiquement à{" "}
+                <strong className="text-navy-900">{champs.email}</strong>.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Mode démo local — aucun envoi réel effectué.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4">
+              <Link
+                href={`/dossiers/${id}/validation-avocat`}
+                className="btn-primary"
+              >
+                Demander une validation avocat
+              </Link>
+              <Link href={`/dossiers/${id}/audit`} className="btn-secondary">
+                Revenir à l&apos;audit
+              </Link>
+            </div>
+          </div>
+        ) : (
+          /* ── Formulaire ── */
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div className="form-field">
+                <label className="form-label" htmlFor="cap-nom">
+                  Nom complet <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="cap-nom"
+                  type="text"
+                  className="form-input"
+                  placeholder="Jean Dupont"
+                  value={champs.nom}
+                  onChange={set("nom")}
+                  required
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="form-label" htmlFor="cap-email">
+                  Adresse e-mail <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="cap-email"
+                  type="email"
+                  className="form-input"
+                  placeholder="jean.dupont@exemple.fr"
+                  value={champs.email}
+                  onChange={set("email")}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div className="form-field">
+                <label className="form-label" htmlFor="cap-role">
+                  Rôle dans l&apos;opération <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="cap-role"
+                  className="form-input"
+                  value={champs.role}
+                  onChange={set("role")}
+                  required
+                >
+                  {ROLES.map(({ value, label }) => (
+                    <option key={value} value={value} disabled={value === ""}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-field">
+                <label className="form-label" htmlFor="cap-telephone">
+                  Téléphone{" "}
+                  <span className="font-normal text-muted-foreground">(optionnel)</span>
+                </label>
+                <input
+                  id="cap-telephone"
+                  type="tel"
+                  className="form-input"
+                  placeholder="06 00 00 00 00"
+                  value={champs.telephone}
+                  onChange={set("telephone")}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <input
+                  id="cap-consentement-rapport"
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-navy-700"
+                  checked={champs.consentementRapport}
+                  onChange={(e) =>
+                    setChamps((prev) => ({
+                      ...prev,
+                      consentementRapport: e.target.checked,
+                    }))
+                  }
+                  required
+                />
+                <label
+                  htmlFor="cap-consentement-rapport"
+                  className="cursor-pointer text-sm text-navy-900"
+                >
+                  J&apos;accepte de recevoir mon rapport d&apos;audit par email.{" "}
+                  <span className="text-red-500">*</span>
+                </label>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <input
+                  id="cap-consentement-recontact"
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-navy-700"
+                  checked={champs.consentementRecontact}
+                  onChange={(e) =>
+                    setChamps((prev) => ({
+                      ...prev,
+                      consentementRecontact: e.target.checked,
+                    }))
+                  }
+                />
+                <label
+                  htmlFor="cap-consentement-recontact"
+                  className="cursor-pointer text-sm text-muted-foreground"
+                >
+                  J&apos;accepte d&apos;être recontacté au sujet de mon dossier.
+                </label>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 pt-1">
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={!peutSoumettre}
+              >
+                Recevoir mon rapport PDF
+              </button>
+              <Link href={`/dossiers/${id}/audit`} className="btn-secondary">
+                Revenir à l&apos;audit
+              </Link>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Mode démo local — aucun envoi réel. La génération PDF et
+              l&apos;envoi seront activés lors du branchement production.
+            </p>
+          </form>
+        )}
+      </section>
     </div>
   );
 }
