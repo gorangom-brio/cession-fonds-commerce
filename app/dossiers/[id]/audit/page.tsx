@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getDocumentLabel } from "@/lib/document-labels";
 import DossierStepper from "../DossierStepper";
+import PdfExtractionPanel from "./PdfExtractionPanel";
 
 const IS_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -173,6 +174,9 @@ export default async function DossierAuditPage({
           )}
         </section>
       )}
+
+      {/* Extraction PDF */}
+      <PdfExtractionPanel id={id} modeReel={modeReel} />
 
       {/* Synthèse rapide */}
       <section className="grid grid-cols-3 gap-4">
