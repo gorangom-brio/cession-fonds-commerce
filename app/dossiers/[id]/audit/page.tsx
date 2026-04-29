@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getDocumentLabel } from "@/lib/document-labels";
+import { type Statut, type ItemChecklist, analyserDocuments } from "@/lib/audit-rules";
 import DossierStepper from "../DossierStepper";
 import PdfExtractionPanel from "./PdfExtractionPanel";
 
@@ -8,14 +9,6 @@ const IS_UUID =
 
 type DossierAuditPageProps = {
   params: Promise<{ id: string }>;
-};
-
-type Statut = "Présent" | "À vérifier" | "Manquant";
-
-type ItemChecklist = {
-  piece: string;
-  statut: Statut;
-  note?: string;
 };
 
 const checklist: ItemChecklist[] = [
@@ -42,10 +35,6 @@ const STATUT_STYLE: Record<Statut, string> = {
   "À vérifier": "confidenceOrange",
   Manquant: "confidenceRed",
 };
-
-const presents = checklist.filter((i) => i.statut === "Présent").length;
-const aVerifier = checklist.filter((i) => i.statut === "À vérifier").length;
-const manquants = checklist.filter((i) => i.statut === "Manquant").length;
 
 function formatTaille(octets: number): string {
   if (octets < 1024) return `${octets} o`;
@@ -80,6 +69,15 @@ export default async function DossierAuditPage({
       erreurSupabase = true;
     }
   }
+
+  const checklistEffective: ItemChecklist[] =
+    modeReel && !erreurSupabase && documentsReels.length > 0
+      ? analyserDocuments(documentsReels)
+      : checklist;
+
+  const presents = checklistEffective.filter((i) => i.statut === "Présent").length;
+  const aVerifier = checklistEffective.filter((i) => i.statut === "À vérifier").length;
+  const manquants = checklistEffective.filter((i) => i.statut === "Manquant").length;
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
@@ -204,11 +202,11 @@ export default async function DossierAuditPage({
       <section className="space-y-3">
         <h2 className="text-xl font-semibold text-navy-900">
           Checklist documentaire
-          {modeReel && (
-            <span className="ml-2 text-sm font-normal text-muted-foreground">
-              (simulée — analyse IA non encore branchée)
-            </span>
-          )}
+          <span className="ml-2 text-sm font-normal text-muted-foreground">
+            {modeReel && !erreurSupabase && documentsReels.length > 0
+              ? "(basée sur les types de documents détectés — ne constitue pas une analyse juridique)"
+              : "(simulée — analyse IA non encore branchée)"}
+          </span>
         </h2>
         <div className="rounded-lg border border-border bg-white overflow-hidden">
           <table className="w-full text-sm">
@@ -226,7 +224,7 @@ export default async function DossierAuditPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {checklist.map((item) => (
+              {checklistEffective.map((item) => (
                 <tr key={item.piece}>
                   <td className="px-5 py-4 font-medium text-navy-900">
                     {item.piece}
