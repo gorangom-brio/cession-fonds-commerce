@@ -36,6 +36,25 @@ export async function markDocumentAnalysed(documentId: string) {
   }
 }
 
+export async function updateDocumentExtraction(
+  documentId: string,
+  nbCaracteres: number,
+  extractionOk: boolean
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("documents")
+    .update({
+      nb_caracteres_extraits: nbCaracteres,
+      extraction_ok: extractionOk,
+      analyse_effectuee: true,
+    })
+    .eq("id", documentId);
+
+  if (error) {
+    throw new Error(`Erreur persistance extraction : ${error.message}`);
+  }
+}
+
 export async function getDocumentsByCessionId(cessionId: string) {
   const { data, error } = await supabaseAdmin
     .from("documents")

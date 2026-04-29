@@ -222,6 +222,8 @@ export interface Database {
           storage_path: string;
           taille_octets: number;
           analyse_effectuee: boolean;
+          nb_caracteres_extraits: number | null;
+          extraction_ok: boolean | null;
         };
         Insert: {
           id?: string;
@@ -232,6 +234,8 @@ export interface Database {
           storage_path: string;
           taille_octets: number;
           analyse_effectuee?: boolean;
+          nb_caracteres_extraits?: number | null;
+          extraction_ok?: boolean | null;
         };
         Update: {
           id?: string;
@@ -242,6 +246,8 @@ export interface Database {
           storage_path?: string;
           taille_octets?: number;
           analyse_effectuee?: boolean;
+          nb_caracteres_extraits?: number | null;
+          extraction_ok?: boolean | null;
         };
         Relationships: [
           {

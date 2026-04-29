@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase/server";
+import { supabaseAdmin, updateDocumentExtraction } from "@/lib/supabase/server";
 import { extractPdfText } from "@/lib/pdf-text-extractor";
 
 const IS_UUID =
@@ -59,6 +59,10 @@ export async function POST(_req: Request, { params }: RouteParams) {
 
       const buffer = await blob.arrayBuffer();
       const extraction = await extractPdfText(buffer);
+
+      updateDocumentExtraction(doc.id, extraction.nb_caracteres, extraction.extraction_ok).catch(
+        (err) => console.warn(`[extract-text] Persistance échouée pour ${doc.id}:`, err)
+      );
 
       return {
         id: doc.id,
