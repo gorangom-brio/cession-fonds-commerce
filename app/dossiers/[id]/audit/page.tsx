@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getDocumentLabel } from "@/lib/document-labels";
 import DossierStepper from "../DossierStepper";
 
 const IS_UUID =
@@ -142,8 +143,16 @@ export default async function DossierAuditPage({
                       <td className="px-5 py-4 text-muted-foreground hidden sm:table-cell">
                         {formatTaille(doc.taille_octets)}
                       </td>
-                      <td className="px-5 py-4 text-muted-foreground hidden md:table-cell">
-                        {doc.type_document ?? "—"}
+                      <td className="px-5 py-4 hidden md:table-cell">
+                        {doc.type_document ? (
+                          <span className="inline-flex items-center rounded-full bg-navy-50 px-2.5 py-0.5 text-xs font-medium text-navy-800 ring-1 ring-inset ring-navy-200">
+                            {getDocumentLabel(doc.type_document)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">
+                            Non détecté
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         {doc.analyse_effectuee ? (
