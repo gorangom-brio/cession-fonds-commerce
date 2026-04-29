@@ -1,6 +1,9 @@
 import Link from "next/link";
 import DossierStepper from "../DossierStepper";
 
+const IS_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 type DossierAuditPageProps = {
   params: Promise<{ id: string }>;
 };
@@ -42,10 +45,39 @@ const presents = checklist.filter((i) => i.statut === "Présent").length;
 const aVerifier = checklist.filter((i) => i.statut === "À vérifier").length;
 const manquants = checklist.filter((i) => i.statut === "Manquant").length;
 
+function formatTaille(octets: number): string {
+  if (octets < 1024) return `${octets} o`;
+  if (octets < 1024 * 1024) return `${(octets / 1024).toFixed(0)} Ko`;
+  return `${(octets / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
 export default async function DossierAuditPage({
   params,
 }: DossierAuditPageProps) {
   const { id } = await params;
+  const modeReel = IS_UUID.test(id);
+
+  type DocumentReel = {
+    id: string;
+    nom_fichier: string;
+    taille_octets: number;
+    type_document: string | null;
+    analyse_effectuee: boolean;
+  };
+
+  let documentsReels: DocumentReel[] = [];
+  let erreurSupabase = false;
+
+  if (modeReel) {
+    try {
+      const { getDocumentsByCessionId } = await import(
+        "@/lib/supabase/server"
+      );
+      documentsReels = await getDocumentsByCessionId(id);
+    } catch {
+      erreurSupabase = true;
+    }
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
@@ -57,10 +89,81 @@ export default async function DossierAuditPage({
           Audit documentaire du dossier
         </h1>
         <p className="max-w-3xl text-lg text-muted-foreground">
-          Analyse simulée en mode démo. Les statuts ci-dessous seront calculés
-          automatiquement par le moteur d&apos;audit lors du branchement V2.
+          {modeReel && !erreurSupabase
+            ? "Audit basé sur les documents réellement téléversés pour ce dossier. La checklist ci-dessous reste simulée en attendant l'analyse IA."
+            : "Analyse simulée en mode démo. Les statuts ci-dessous seront calculés automatiquement par le moteur d'audit lors du branchement V2."}
         </p>
       </div>
+
+      {/* Section documents réels — UUID uniquement */}
+      {modeReel && (
+        <section className="space-y-3">
+          <h2 className="text-xl font-semibold text-navy-900">
+            Pièces réellement déposées
+          </h2>
+
+          {erreurSupabase && (
+            <p className="text-sm text-muted-foreground italic">
+              Mode démo : les documents réels n&apos;ont pas pu être récupérés.
+            </p>
+          )}
+
+          {!erreurSupabase && documentsReels.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              Aucun document téléversé n&apos;a encore été trouvé pour ce dossier.
+            </p>
+          )}
+
+          {!erreurSupabase && documentsReels.length > 0 && (
+            <div className="rounded-lg border border-border bg-white overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-gray-50">
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Fichier
+                    </th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hidden sm:table-cell">
+                      Taille
+                    </th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hidden md:table-cell">
+                      Type détecté
+                    </th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Analysé
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {documentsReels.map((doc) => (
+                    <tr key={doc.id}>
+                      <td className="px-5 py-4 font-medium text-navy-900 max-w-xs truncate">
+                        {doc.nom_fichier}
+                      </td>
+                      <td className="px-5 py-4 text-muted-foreground hidden sm:table-cell">
+                        {formatTaille(doc.taille_octets)}
+                      </td>
+                      <td className="px-5 py-4 text-muted-foreground hidden md:table-cell">
+                        {doc.type_document ?? "—"}
+                      </td>
+                      <td className="px-5 py-4">
+                        {doc.analyse_effectuee ? (
+                          <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold confidenceGreen">
+                            Analysé
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold confidenceOrange">
+                            En attente
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Synthèse rapide */}
       <section className="grid grid-cols-3 gap-4">
@@ -88,6 +191,11 @@ export default async function DossierAuditPage({
       <section className="space-y-3">
         <h2 className="text-xl font-semibold text-navy-900">
           Checklist documentaire
+          {modeReel && (
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              (simulée — analyse IA non encore branchée)
+            </span>
+          )}
         </h2>
         <div className="rounded-lg border border-border bg-white overflow-hidden">
           <table className="w-full text-sm">
@@ -158,7 +266,9 @@ export default async function DossierAuditPage({
           maintenant pour servir de base de travail.
         </p>
         <p className="text-xs text-muted-foreground">
-          Audit simulé en mode démo local — aucune analyse IA effectuée à ce stade.
+          {modeReel
+            ? "Checklist simulée — l'analyse IA des documents sera branchée dans une prochaine version."
+            : "Audit simulé en mode démo local — aucune analyse IA effectuée à ce stade."}
         </p>
       </section>
 
