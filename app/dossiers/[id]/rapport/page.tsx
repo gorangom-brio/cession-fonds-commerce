@@ -104,9 +104,26 @@ export default function DossierRapportPage() {
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setChamps((prev) => ({ ...prev, [champ]: e.target.value }));
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!peutSoumettre) return;
+
+    try {
+      const { insertReportLead } = await import("@/lib/supabase/client");
+      await insertReportLead({
+        dossier_id: id,
+        nom: champs.nom,
+        email: champs.email,
+        role: champs.role as "vendeur" | "acquereur" | "intermediaire" | "autre",
+        telephone: champs.telephone || null,
+        consentement_rapport: champs.consentementRapport,
+        consentement_recontact: champs.consentementRecontact,
+        source: "rapport_pdf_demo",
+      });
+    } catch (err) {
+      console.warn("[report_leads] Lead non persisté (Supabase indisponible) :", err);
+    }
+
     setEnvoye(true);
   };
 
