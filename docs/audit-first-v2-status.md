@@ -16,7 +16,7 @@
 /dossiers/new                     Création d'un dossier (cession Supabase réelle)
 /dossiers/[id]                    Dashboard du dossier + stepper
 /dossiers/[id]/documents          Upload réel des documents (Supabase Storage)
-/dossiers/[id]/audit              Audit enrichi avec les documents réellement déposés
+/dossiers/[id]/audit              Audit enrichi — checklist calculée + extraction PDF
 /dossiers/[id]/rapport            Rapport structuré + capture email + lead persisté
 /dossiers/[id]/validation-avocat  Demande de validation avocat (simulée)
 ```
@@ -37,6 +37,11 @@ Le tunnel fonctionne en **deux modes** :
 - **Insertion des métadonnées** dans la table `documents` (nom, taille, chemin storage).
 - **Classification légère par nom de fichier** : `type_document` enregistré en base pour chaque document uploadé (sans lecture PDF, sans IA).
 - **Affichage enrichi à l'audit** : section "Pièces réellement déposées" avec libellés lisibles des types détectés.
+- **Extraction texte PDF** via `unpdf` — route API `POST /api/dossiers/[id]/extract-text`, déclenchée manuellement depuis la page audit.
+- **Affichage des résultats d'extraction** dans la page audit : statut par document, nombre de caractères, extrait court.
+- **Détection des PDF scannés** ou non extractibles : signalés lorsque `nb_caracteres_extraits = 0` après tentative réussie.
+- **Persistance des métadonnées d'extraction** dans la table `documents` : `nb_caracteres_extraits`, `extraction_ok`, `analyse_effectuee`.
+- **Checklist documentaire calculée** à partir des `type_document` réellement déposés — plus de checklist simulée en mode réel.
 - **Capture lead rapport PDF** : nom, email, rôle, consentements enregistrés dans la table `report_leads`.
 - Stepper de progression sur toutes les pages `[id]/*`.
 
@@ -46,13 +51,33 @@ Le tunnel fonctionne en **deux modes** :
 
 | Fonctionnalité | État |
 |---|---|
-| Lecture réelle du contenu PDF | Non branchée |
-| Extraction juridique des documents | Non branchée |
-| Audit juridique structuré | Simulé — checklist et statuts fixes |
+| Extraction structurée des données juridiques | Non branchée — texte brut uniquement |
+| Audit juridique réel | Non branché — checklist basée sur `type_document`, pas sur le contenu |
+| Analyse IA / Anthropic | Non branchée |
 | Génération PDF du rapport | Non implémentée |
 | Envoi email | Non branché |
 | Validation avocat réelle | Simulée |
 | Génération d'actes (compromis, protocole) | Hors périmètre V2 |
+
+---
+
+## Chaîne documentaire actuelle
+
+```
+Upload fichier
+    ↓
+Stockage Supabase Storage (bucket documents)
+    ↓
+Insertion métadonnées en table documents (nom, taille, storage_path)
+    ↓
+Classification légère par nom de fichier → type_document enregistré
+    ↓
+[Manuel] Extraction texte PDF → nb_caracteres_extraits, extraction_ok persistés
+    ↓
+Checklist calculée à partir de type_document → affichage audit
+    ↓
+Affichage audit : pièces présentes / manquantes / à vérifier
+```
 
 ---
 
@@ -66,16 +91,36 @@ Le tunnel fonctionne en **deux modes** :
 
 ---
 
+## Décisions RGPD / sécurité
+
+- **Le texte extrait des PDF n'est pas persisté** : seules les métadonnées techniques (`nb_caracteres_extraits`, `extraction_ok`) sont stockées.
+- **Les fichiers PDF restent dans Supabase Storage** : non copiés ailleurs, non envoyés à des tiers.
+- **Les documents scannés sont signalés** (PDF sans texte sélectionnable) sans tentative d'OCR à ce stade.
+- **Pas de consentement spécifique requis** pour les métadonnées techniques — elles sont liées au traitement légitime du dossier.
+- **Le texte extrait ne sera persisté qu'après validation d'une base légale et d'une durée de conservation** explicite.
+
+---
+
+## Points d'attention actuels
+
+- **Doublons de documents** : un même fichier peut être uploadé plusieurs fois sans détection — aucune contrainte d'unicité en base.
+- **Documents anciens sans `type_document`** : les documents déposés avant la V2-13 ont `type_document = null` — signalés "À vérifier" dans la checklist.
+- **PDF scannés non exploitables** : sans OCR, leur contenu reste inaccessible — la checklist les ignore si leur nom n'est pas assez explicite.
+- **Classification dépendante du nom de fichier** : un PDF nommé `document1.pdf` sera classé `"autre"` et ne contribuera à aucune catégorie attendue.
+- **Absence d'authentification utilisateur** : le dossier est accessible par UUID — pas de protection par session à ce stade (MVP sans auth).
+
+---
+
 ## Prochaines étapes recommandées
 
 | Mission | Objectif |
 |---|---|
-| V2-16 | Lecture PDF / extraction de texte brut |
-| V2-17 | Classification confirmée par contenu (renforcement heuristique ou IA légère) |
-| V2-18 | Audit juridique structuré à partir des documents réels |
-| V2-19 | Persistance structurée de l'audit (table `analyses` ou champs enrichis sur `cessions`) |
-| V2-20 | Génération PDF du rapport d'audit |
-| V2-21 | Validation avocat réelle (email ou webhook) |
+| V2-21 | Définir la liste exhaustive des pièces attendues selon le type de dossier |
+| V2-22 | Extraction structurée des informations clés par type documentaire |
+| V2-23 | Persistance structurée de l'audit juridique |
+| V2-24 | Audit juridique assisté IA (branchement Anthropic) |
+| V2-25 | Génération PDF du rapport d'audit |
+| V2-26 | Validation avocat réelle (email ou webhook) |
 
 ---
 
@@ -86,6 +131,7 @@ Le tunnel fonctionne en **deux modes** :
 - Génération d'actes (compromis, protocole de cession)
 - Marketplace avocat
 - Workflow multi-utilisateurs / auth
+- OCR pour PDF scannés
 
 ---
 
