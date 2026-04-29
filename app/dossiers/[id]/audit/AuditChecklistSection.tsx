@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { type SituationDossier } from "@/lib/situation";
 import { analyserDocuments, type Statut, type Phase } from "@/lib/audit-rules";
 import SituationPanel from "./SituationPanel";
@@ -17,7 +17,32 @@ type Props = {
   documentsReels: DocumentReel[];
   modeReel: boolean;
   erreurSupabase: boolean;
+  initialSituation?: SituationDossier;
 };
+
+const DEBOUNCE_MS = 800;
+
+function localStorageKey(dossierId: string) {
+  return `situation_dossier_${dossierId}`;
+}
+
+function readLocalSituation(dossierId: string): SituationDossier | null {
+  try {
+    const raw = localStorage.getItem(localStorageKey(dossierId));
+    if (!raw) return null;
+    return JSON.parse(raw) as SituationDossier;
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalSituation(dossierId: string, situation: SituationDossier) {
+  try {
+    localStorage.setItem(localStorageKey(dossierId), JSON.stringify(situation));
+  } catch {
+    // localStorage indisponible — silencieux
+  }
+}
 
 const PHASES: Phase[] = ["demarrage", "audit_complet", "avocat_acte"];
 
@@ -38,8 +63,61 @@ export default function AuditChecklistSection({
   documentsReels,
   modeReel,
   erreurSupabase,
+  initialSituation,
 }: Props) {
-  const [situation, setSituation] = useState<SituationDossier>({});
+  // dossierId est encodé dans l'URL — on l'extrait côté client pour localStorage
+  const [dossierId, setDossierId] = useState<string>("");
+  const [situation, setSituation] = useState<SituationDossier>(
+    initialSituation ?? {}
+  );
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFirstRender = useRef(true);
+
+  // Récupère l'id du dossier depuis l'URL côté client
+  useEffect(() => {
+    const segments = window.location.pathname.split("/");
+    const id = segments[2] ?? "";
+    setDossierId(id);
+
+    // Si pas de situation initiale depuis Supabase, tente le fallback localStorage
+    if (!initialSituation && id) {
+      const local = readLocalSituation(id);
+      if (local) setSituation(local);
+    }
+  }, [initialSituation]);
+
+  // Sauvegarde silencieuse à chaque changement (sauf au premier rendu)
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (!dossierId) return;
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(() => {
+      // Fallback localStorage toujours écrit (mode démo + fallback réseau)
+      writeLocalSituation(dossierId, situation);
+
+      // Supabase uniquement en mode réel
+      const IS_UUID =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!IS_UUID.test(dossierId)) return;
+
+      import("@/lib/supabase/client")
+        .then(({ updateCession }) =>
+          updateCession(dossierId, { situation_declaree: situation })
+        )
+        .catch(() => {
+          // Échec silencieux — localStorage sert de fallback
+        });
+    }, DEBOUNCE_MS);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [situation, dossierId]);
 
   const checklistEffective =
     modeReel && !erreurSupabase

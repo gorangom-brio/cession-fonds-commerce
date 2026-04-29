@@ -55,6 +55,20 @@ export async function updateDocumentExtraction(
   }
 }
 
+export async function getCessionById(cessionId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("cessions")
+    .select("*")
+    .eq("id", cessionId)
+    .single();
+
+  if (error) {
+    throw new Error(`Erreur lecture cession : ${error.message}`);
+  }
+
+  return data;
+}
+
 export async function getDocumentsByCessionId(cessionId: string) {
   const { data, error } = await supabaseAdmin
     .from("documents")

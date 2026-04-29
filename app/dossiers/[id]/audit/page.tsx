@@ -5,6 +5,7 @@ import PdfExtractionPanel from "./PdfExtractionPanel";
 import AuditChecklistSection, {
   type DocumentReel,
 } from "./AuditChecklistSection";
+import type { SituationDossier } from "@/lib/situation";
 
 const IS_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -34,13 +35,21 @@ export default async function DossierAuditPage({
 
   let documentsReels: DocumentReel[] = [];
   let erreurSupabase = false;
+  let initialSituation: SituationDossier | undefined;
 
   if (modeReel) {
     try {
-      const { getDocumentsByCessionId } = await import(
+      const { getDocumentsByCessionId, getCessionById } = await import(
         "@/lib/supabase/server"
       );
-      documentsReels = await getDocumentsByCessionId(id);
+      const [docs, cession] = await Promise.all([
+        getDocumentsByCessionId(id),
+        getCessionById(id),
+      ]);
+      documentsReels = docs;
+      if (cession.situation_declaree && typeof cession.situation_declaree === "object" && !Array.isArray(cession.situation_declaree)) {
+        initialSituation = cession.situation_declaree as SituationDossier;
+      }
     } catch {
       erreurSupabase = true;
     }
@@ -148,6 +157,7 @@ export default async function DossierAuditPage({
         documentsReels={documentsReels}
         modeReel={modeReel}
         erreurSupabase={erreurSupabase}
+        initialSituation={initialSituation}
       />
 
       {/* Points d'attention */}

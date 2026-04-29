@@ -58,6 +58,7 @@ export interface Database {
           confidence_scores: Json | null;
           ai_comments: Json | null;
           raw_ai_response: string | null;
+          situation_declaree: Json | null;
         };
         Insert: {
           id?: string;
@@ -107,6 +108,7 @@ export interface Database {
           confidence_scores?: Json | null;
           ai_comments?: Json | null;
           raw_ai_response?: string | null;
+          situation_declaree?: Json | null;
         };
         Update: {
           id?: string;
@@ -156,6 +158,7 @@ export interface Database {
           confidence_scores?: Json | null;
           ai_comments?: Json | null;
           raw_ai_response?: string | null;
+          situation_declaree?: Json | null;
         };
         Relationships: [];
       };
