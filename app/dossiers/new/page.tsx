@@ -10,12 +10,19 @@ export default function NewDossierPage() {
   const [contexte, setContexte] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitting) return;
     setSubmitting(true);
-    const id = `demo-${Date.now()}`;
-    router.push(`/dossiers/${id}`);
+
+    try {
+      const { createCession } = await import("@/lib/supabase/client");
+      const cession = await createCession();
+      router.push(`/dossiers/${cession.id}`);
+    } catch (err) {
+      console.warn("[dossiers/new] Création Supabase échouée, fallback démo :", err);
+      router.push(`/dossiers/demo-${Date.now()}`);
+    }
   };
 
   const peutCreer = nom.trim().length > 0;
@@ -73,7 +80,7 @@ export default function NewDossierPage() {
               className="btn-primary"
               disabled={!peutCreer || submitting}
             >
-              {submitting ? "Création en cours..." : "Créer le dossier d'audit"}
+              {submitting ? "Création en cours…" : "Créer le dossier d'audit"}
             </button>
             <Link href="/" className="btn-secondary">
               Revenir à l&apos;accueil
@@ -81,9 +88,8 @@ export default function NewDossierPage() {
           </div>
 
           <p className="text-sm text-muted-foreground">
-            Mode démo local : un identifiant temporaire est généré pour tester
-            le parcours d&apos;audit. La persistance du dossier sera branchée
-            dans une prochaine mission.
+            Un dossier est créé et un identifiant unique lui est attribué. Si le
+            service est indisponible, un identifiant local temporaire est utilisé.
           </p>
         </form>
 
