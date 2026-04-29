@@ -1,11 +1,16 @@
-import { getDocumentLabel } from "./document-labels";
+import { DOCUMENT_REQUIREMENTS, type Phase, type Priorite } from "./document-requirements";
 
-export type Statut = "Présent" | "À vérifier" | "Manquant";
+export type { Phase };
+
+export type Statut = "Présent" | "À vérifier" | "Manquant" | "Le cas échéant";
 
 export type ItemChecklist = {
   piece: string;
   statut: Statut;
   note?: string;
+  phase?: Phase;
+  priorite?: Priorite;
+  conditionLabel?: string;
 };
 
 type DocInfo = {
@@ -13,17 +18,17 @@ type DocInfo = {
   nom_fichier: string;
 };
 
-const CATEGORIES_ATTENDUES = [
-  "bail_commercial",
-  "kbis",
-  "bilans_comptes_annuels",
-  "pieces_fiscales",
-  "contrat_travail",
-  "bulletin_salaire",
-  "actifs_incorporels_marque",
-  "autorisations_administratives",
-  "contrats_fournisseurs",
-] as const;
+function statutAbsent(priorite: Priorite): Statut {
+  switch (priorite) {
+    case "indispensable":
+      return "Manquant";
+    case "conditionnel":
+    case "recommande":
+      return "À vérifier";
+    case "le_cas_echeant":
+      return "Le cas échéant";
+  }
+}
 
 export function analyserDocuments(docs: DocInfo[]): ItemChecklist[] {
   const typesPrésents = new Set(
@@ -32,10 +37,17 @@ export function analyserDocuments(docs: DocInfo[]): ItemChecklist[] {
       .filter((t): t is string => Boolean(t) && t !== "autre")
   );
 
-  const categoriesChecklist: ItemChecklist[] = CATEGORIES_ATTENDUES.map((type) => ({
-    piece: getDocumentLabel(type),
-    statut: typesPrésents.has(type) ? "Présent" : "Manquant",
-  }));
+  const checklistRequirements: ItemChecklist[] = DOCUMENT_REQUIREMENTS.map((req) => {
+    const présent = req.documentType ? typesPrésents.has(req.documentType) : false;
+    return {
+      piece: req.label,
+      statut: présent ? "Présent" : statutAbsent(req.priorite),
+      note: req.note,
+      phase: req.phase,
+      priorite: req.priorite,
+      conditionLabel: req.conditionLabel,
+    };
+  });
 
   const nonClasses: ItemChecklist[] = docs
     .filter((d) => !d.type_document || d.type_document === "autre")
@@ -45,5 +57,5 @@ export function analyserDocuments(docs: DocInfo[]): ItemChecklist[] {
       note: "Type non détecté automatiquement — à identifier manuellement.",
     }));
 
-  return [...categoriesChecklist, ...nonClasses];
+  return [...checklistRequirements, ...nonClasses];
 }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getDocumentLabel } from "@/lib/document-labels";
-import { type Statut, type ItemChecklist, analyserDocuments } from "@/lib/audit-rules";
+import { type Statut, type ItemChecklist, type Phase, analyserDocuments } from "@/lib/audit-rules";
 import DossierStepper from "../DossierStepper";
 import PdfExtractionPanel from "./PdfExtractionPanel";
 
@@ -11,17 +11,13 @@ type DossierAuditPageProps = {
   params: Promise<{ id: string }>;
 };
 
-const checklist: ItemChecklist[] = [
-  { piece: "Bail commercial", statut: "Présent", note: "Clause de cession à vérifier" },
-  { piece: "Kbis ou pièce administrative du fonds", statut: "Présent" },
-  { piece: "Bilans / comptes annuels", statut: "À vérifier", note: "3 exercices demandés, 2 fournis" },
-  { piece: "Pièces fiscales", statut: "À vérifier", note: "Liasses fiscales N-1 et N-2 à confirmer" },
-  { piece: "Contrats de travail", statut: "Manquant" },
-  { piece: "Bulletins de salaire", statut: "Manquant" },
-  { piece: "Actifs incorporels / marque / nom commercial", statut: "À vérifier", note: "Inclusion ou exclusion à préciser" },
-  { piece: "Autorisations administratives", statut: "Manquant" },
-  { piece: "Contrats fournisseurs utiles", statut: "À vérifier" },
-];
+const PHASES: Phase[] = ["demarrage", "audit_complet", "avocat_acte"];
+
+const PHASE_LABELS: Record<Phase, string> = {
+  demarrage: "Phase 1 — Démarrage",
+  audit_complet: "Phase 2 — Audit complet",
+  avocat_acte: "Phase 3 — Avocat & acte",
+};
 
 const pointsAttention = [
   "Vérifier la clause de cession du bail : accord du bailleur requis avant toute cession.",
@@ -34,6 +30,7 @@ const STATUT_STYLE: Record<Statut, string> = {
   Présent: "confidenceGreen",
   "À vérifier": "confidenceOrange",
   Manquant: "confidenceRed",
+  "Le cas échéant": "bg-gray-100 text-gray-500",
 };
 
 function formatTaille(octets: number): string {
@@ -71,13 +68,14 @@ export default async function DossierAuditPage({
   }
 
   const checklistEffective: ItemChecklist[] =
-    modeReel && !erreurSupabase && documentsReels.length > 0
+    modeReel && !erreurSupabase
       ? analyserDocuments(documentsReels)
-      : checklist;
+      : analyserDocuments([]);
 
   const presents = checklistEffective.filter((i) => i.statut === "Présent").length;
   const aVerifier = checklistEffective.filter((i) => i.statut === "À vérifier").length;
   const manquants = checklistEffective.filter((i) => i.statut === "Manquant").length;
+  const leCasEcheant = checklistEffective.filter((i) => i.statut === "Le cas échéant").length;
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
@@ -90,8 +88,8 @@ export default async function DossierAuditPage({
         </h1>
         <p className="max-w-3xl text-lg text-muted-foreground">
           {modeReel && !erreurSupabase
-            ? "Audit basé sur les documents réellement téléversés pour ce dossier. La checklist ci-dessous reste simulée en attendant l'analyse IA."
-            : "Analyse simulée en mode démo. Les statuts ci-dessous seront calculés automatiquement par le moteur d'audit lors du branchement V2."}
+            ? "Checklist calculée à partir des documents réellement téléversés. Les statuts reflètent les types détectés — pas le contenu des documents."
+            : "Mode démo — aucun document réel. La checklist indique les pièces attendues pour une cession de fonds de commerce standard."}
         </p>
       </div>
 
@@ -177,7 +175,7 @@ export default async function DossierAuditPage({
       <PdfExtractionPanel id={id} modeReel={modeReel} />
 
       {/* Synthèse rapide */}
-      <section className="grid grid-cols-3 gap-4">
+      <section className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="rounded-lg border border-border bg-white p-5 text-center space-y-1">
           <p className="text-2xl font-bold text-confidence-high">{presents}</p>
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -196,54 +194,123 @@ export default async function DossierAuditPage({
             Manquantes
           </p>
         </div>
+        <div className="rounded-lg border border-border bg-white p-5 text-center space-y-1">
+          <p className="text-2xl font-bold text-gray-400">{leCasEcheant}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Le cas échéant
+          </p>
+        </div>
       </section>
 
-      {/* Checklist documentaire */}
-      <section className="space-y-3">
+      {/* Checklist documentaire — groupée par phase */}
+      <section className="space-y-4">
         <h2 className="text-xl font-semibold text-navy-900">
           Checklist documentaire
-          <span className="ml-2 text-sm font-normal text-muted-foreground">
-            {modeReel && !erreurSupabase && documentsReels.length > 0
-              ? "(basée sur les types de documents détectés — ne constitue pas une analyse juridique)"
-              : "(simulée — analyse IA non encore branchée)"}
-          </span>
         </h2>
-        <div className="rounded-lg border border-border bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-gray-50">
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Pièce
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Statut
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hidden md:table-cell">
-                  Note
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {checklistEffective.map((item) => (
-                <tr key={item.piece}>
-                  <td className="px-5 py-4 font-medium text-navy-900">
-                    {item.piece}
-                  </td>
-                  <td className="px-5 py-4">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUT_STYLE[item.statut]}`}
-                    >
-                      {item.statut}
-                    </span>
-                  </td>
-                  <td className="px-5 py-4 text-muted-foreground hidden md:table-cell">
-                    {item.note ?? "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+
+        {PHASES.map((phase) => {
+          const items = checklistEffective.filter((i) => i.phase === phase);
+          if (items.length === 0) return null;
+          return (
+            <div key={phase}>
+              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-navy-600">
+                {PHASE_LABELS[phase]}
+              </h3>
+              <div className="rounded-lg border border-border bg-white overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-gray-50">
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Pièce
+                      </th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Statut
+                      </th>
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hidden md:table-cell">
+                        Note
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {items.map((item) => (
+                      <tr key={item.piece}>
+                        <td className="px-5 py-4 font-medium text-navy-900">
+                          {item.piece}
+                          {item.conditionLabel && (
+                            <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                              — {item.conditionLabel}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-4">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUT_STYLE[item.statut]}`}
+                          >
+                            {item.statut}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-muted-foreground hidden md:table-cell">
+                          {item.note ?? "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Documents non classifiés */}
+        {checklistEffective.filter((i) => !i.phase).length > 0 && (
+          <div>
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-navy-600">
+              À identifier
+            </h3>
+            <div className="rounded-lg border border-border bg-white overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-gray-50">
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Fichier
+                    </th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Statut
+                    </th>
+                    <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hidden md:table-cell">
+                      Note
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {checklistEffective
+                    .filter((i) => !i.phase)
+                    .map((item) => (
+                      <tr key={item.piece}>
+                        <td className="px-5 py-4 font-medium text-navy-900">
+                          {item.piece}
+                        </td>
+                        <td className="px-5 py-4">
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUT_STYLE[item.statut]}`}
+                          >
+                            {item.statut}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-muted-foreground hidden md:table-cell">
+                          {item.note ?? "—"}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground italic">
+          Liste indicative à adapter selon la situation du fonds et à valider avec un professionnel.
+        </p>
       </section>
 
       {/* Points d'attention */}
@@ -278,8 +345,8 @@ export default async function DossierAuditPage({
         </p>
         <p className="text-xs text-muted-foreground">
           {modeReel
-            ? "Checklist simulée — l'analyse IA des documents sera branchée dans une prochaine version."
-            : "Audit simulé en mode démo local — aucune analyse IA effectuée à ce stade."}
+            ? "Statuts calculés à partir des types de documents détectés — l'analyse du contenu sera disponible dans une prochaine version."
+            : "Mode démo — les statuts reflètent une cession sans aucun document déposé."}
         </p>
       </section>
 
