@@ -159,6 +159,59 @@ export interface Database {
         };
         Relationships: [];
       };
+      report_leads: {
+        Row: {
+          id: string;
+          created_at: string;
+          dossier_id: string;
+          cession_id: string | null;
+          nom: string;
+          email: string;
+          role: "vendeur" | "acquereur" | "intermediaire" | "autre";
+          telephone: string | null;
+          consentement_rapport: boolean;
+          consentement_recontact: boolean;
+          source: string;
+          statut: string;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          dossier_id: string;
+          cession_id?: string | null;
+          nom: string;
+          email: string;
+          role: "vendeur" | "acquereur" | "intermediaire" | "autre";
+          telephone?: string | null;
+          consentement_rapport: boolean;
+          consentement_recontact?: boolean;
+          source?: string;
+          statut?: string;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          dossier_id?: string;
+          cession_id?: string | null;
+          nom?: string;
+          email?: string;
+          role?: "vendeur" | "acquereur" | "intermediaire" | "autre";
+          telephone?: string | null;
+          consentement_rapport?: boolean;
+          consentement_recontact?: boolean;
+          source?: string;
+          statut?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "report_leads_cession_id_fkey";
+            columns: ["cession_id"];
+            isOneToOne: false;
+            referencedRelation: "cessions";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       documents: {
         Row: {
           id: string;

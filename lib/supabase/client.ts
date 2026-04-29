@@ -15,6 +15,7 @@ if (!supabaseAnonKey) {
 type CessionRow = Database["public"]["Tables"]["cessions"]["Row"];
 type CessionUpdate = Database["public"]["Tables"]["cessions"]["Update"];
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
+type ReportLeadInsert = Database["public"]["Tables"]["report_leads"]["Insert"];
 
 let browserClient: SupabaseClient<Database> | null = null;
 
@@ -126,6 +127,16 @@ export async function uploadDocument(
   }
 
   return data as DocumentRow;
+}
+
+export async function insertReportLead(lead: ReportLeadInsert): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from("report_leads")
+    .insert(lead);
+
+  if (error) {
+    throw new Error(`Erreur insertion lead : ${error.message}`);
+  }
 }
 
 export async function getDocuments(cessionId: string): Promise<DocumentRow[]> {
