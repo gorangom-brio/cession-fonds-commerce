@@ -92,6 +92,7 @@ export default function DossierRapportPage() {
   const { id } = useParams<{ id: string }>();
   const [champs, setChamps] = useState<CaptureChamps>(CHAMPS_VIDES);
   const [envoye, setEnvoye] = useState(false);
+  const [persistanceOk, setPersistanceOk] = useState<boolean | null>(null);
 
   const peutSoumettre =
     champs.nom.trim().length > 0 &&
@@ -120,8 +121,10 @@ export default function DossierRapportPage() {
         consentement_recontact: champs.consentementRecontact,
         source: "rapport_pdf_demo",
       });
+      setPersistanceOk(true);
     } catch (err) {
       console.warn("[report_leads] Lead non persisté (Supabase indisponible) :", err);
+      setPersistanceOk(false);
     }
 
     setEnvoye(true);
@@ -300,16 +303,21 @@ export default function DossierRapportPage() {
             <div className="rounded-lg border border-confidence-high/30 bg-confidence-high/10 p-6 space-y-2 text-center">
               <p className="text-2xl font-bold text-confidence-high">✓</p>
               <p className="text-base font-semibold text-navy-900">
-                Votre demande de rapport PDF a bien été enregistrée en mode démo.
+                {persistanceOk
+                  ? "Votre demande a bien été enregistrée."
+                  : "Votre demande de rapport PDF a bien été prise en compte."}
               </p>
               <p className="text-sm text-muted-foreground">
                 Dans la version finale, le rapport PDF sera généré et envoyé
                 automatiquement à{" "}
                 <strong className="text-navy-900">{champs.email}</strong>.
               </p>
-              <p className="text-xs text-muted-foreground">
-                Mode démo local — aucun envoi réel effectué.
-              </p>
+              {!persistanceOk && (
+                <p className="text-xs text-muted-foreground">
+                  Mode démo : votre demande est affichée localement, mais
+                  n&apos;a pas pu être enregistrée.
+                </p>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-4">
@@ -440,6 +448,12 @@ export default function DossierRapportPage() {
                 </label>
               </div>
             </div>
+
+            <p className="text-xs text-muted-foreground">
+              Les informations saisies sont utilisées uniquement pour vous
+              transmettre le rapport demandé et, si vous l&apos;acceptez, vous
+              recontacter au sujet de votre dossier.
+            </p>
 
             <div className="flex flex-wrap items-center gap-4 pt-1">
               <button
