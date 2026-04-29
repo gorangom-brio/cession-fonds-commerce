@@ -57,6 +57,13 @@ export type DocumentType =
   | "statuts"
   | "extrait_sirene"
   | "liasse_fiscale"
+  | "bilans_comptes_annuels"
+  | "pieces_fiscales"
+  | "contrat_travail"
+  | "bulletin_salaire"
+  | "actifs_incorporels_marque"
+  | "autorisations_administratives"
+  | "contrats_fournisseurs"
   | "autre";
 
 export interface Document {

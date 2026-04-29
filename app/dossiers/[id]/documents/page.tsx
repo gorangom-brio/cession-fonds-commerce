@@ -62,7 +62,9 @@ export default function DossierDocumentsPage() {
     );
     try {
       const { uploadDocument } = await import("@/lib/supabase/client");
-      await uploadDocument(id, file);
+      const { classifierDocument } = await import("@/lib/document-classifier");
+      const categorie = classifierDocument(nom);
+      await uploadDocument(id, file, categorie);
       setFichiers((prev) =>
         prev.map((f) => (f.nom === nom ? { ...f, statut: "televerse" } : f))
       );
