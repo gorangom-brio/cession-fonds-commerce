@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getDocumentLabel } from "@/lib/document-labels";
 import DossierStepper from "../DossierStepper";
 import PdfExtractionPanel from "./PdfExtractionPanel";
+import StructuredExtractionPanel from "./StructuredExtractionPanel";
 import AuditChecklistSection, {
   type DocumentReel,
 } from "./AuditChecklistSection";
@@ -149,8 +150,11 @@ export default async function DossierAuditPage({
         </section>
       )}
 
-      {/* Extraction PDF */}
+      {/* Extraction PDF brute */}
       <PdfExtractionPanel id={id} modeReel={modeReel} />
+
+      {/* Extraction structurée par type documentaire */}
+      <StructuredExtractionPanel id={id} modeReel={modeReel} />
 
       {/* Questionnaire de situation + Synthèse + Checklist */}
       <AuditChecklistSection
