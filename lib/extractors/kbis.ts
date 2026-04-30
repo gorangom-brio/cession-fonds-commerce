@@ -1,4 +1,10 @@
 import type { ChampExtrait, ExtractionKbis, NiveauConfiance } from "./types";
+import {
+  findAfterLabel,
+  findDateAfterLabel,
+  extractPremierMontant,
+  parseMonetaire,
+} from "./helpers";
 
 function champ<T>(
   valeur: T | null,
@@ -13,7 +19,6 @@ function vide<T = string>(): ChampExtrait<T> {
 }
 
 function extractSiren(text: string): ChampExtrait {
-  // SIREN avec label explicite (fiabilité haute)
   const labelled = text.match(
     /(?:SIREN|N°\s*SIREN|RCS)[^\d]*(\d{3}[\s.]?\d{3}[\s.]?\d{3})/i
   );
@@ -21,18 +26,32 @@ function extractSiren(text: string): ChampExtrait {
     const siren = labelled[1].replace(/[\s.]/g, "");
     return champ(siren, "haute", labelled[0].trim());
   }
-  // Séquence de 9 chiffres isolée (fiabilité faible — peut être un code postal + autre)
   const bare = text.match(/\b(\d{9})\b/);
   if (bare) return champ(bare[1], "faible", bare[0]);
   return vide();
 }
 
 function extractCapital(text: string): ChampExtrait<number> {
-  // "Capital : 10 000 €" ou "Capital social : 10 000,00 €"
-  const m = text.match(/[Cc]apital(?:\s+social)?\s*:\s*([\d\s,.]+)\s*€/);
-  if (m) {
-    const val = parseFloat(m[1].replace(/\s/g, "").replace(",", "."));
-    if (!isNaN(val) && val > 0) return champ(val, "haute", m[0].trim());
+  const labels = [
+    /[Mm]ontant\s+du\s+capital\s+social/,
+    /[Cc]apital\s+social/,
+    /[Cc]apital/,
+  ];
+  for (const labelRe of labels) {
+    const found = findAfterLabel(text, labelRe, 40);
+    if (found) {
+      const val = extractPremierMontant(found.valeur);
+      if (val !== null && val > 0) return champ(val, "haute", found.source);
+    }
+    // Fallback: inline with explicit € sign
+    const m = text.match(
+      new RegExp(labelRe.source + "\\s*:?\\s*([\\d\\s,.]+)\\s*€", "i")
+    );
+    if (m) {
+      const val = parseMonetaire(m[1]);
+      if (val !== null && val > 0)
+        return champ(val, "haute", m[0].trim().slice(0, 100));
+    }
   }
   return vide<number>();
 }
@@ -47,70 +66,77 @@ function extractFormeJuridique(text: string): ChampExtrait {
       return champ(forme, "haute", forme);
     }
   }
-  const m = text.match(/[Ff]orme\s+juridique\s*:\s*([^\n]{3,60})/);
-  if (m) return champ(m[1].trim(), "moyenne", m[0].trim());
+  const found = findAfterLabel(text, /[Ff]orme\s+juridique/, 60);
+  if (found) return champ(found.valeur, "moyenne", found.source);
   return vide();
 }
 
 function extractDenomination(text: string): ChampExtrait {
-  const patterns = [
-    /[Dd]énomination\s+(?:sociale\s*)?:\s*([^\n]{3,80})/,
-    /[Nn]om\s+commercial\s*:\s*([^\n]{3,80})/,
+  const labels = [
+    /[Dd]énomination\s+ou\s+raison\s+sociale/,
+    /[Rr]aison\s+sociale/,
+    /[Dd]énomination\s+sociale/,
+    /[Dd]énomination/,
+    /[Nn]om\s+commercial/,
   ];
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) return champ(m[1].trim(), "moyenne", m[0].trim());
+  for (const labelRe of labels) {
+    const found = findAfterLabel(text, labelRe, 80);
+    if (found) return champ(found.valeur, "moyenne", found.source);
   }
   return vide();
 }
 
 function extractAdresse(text: string): ChampExtrait {
-  const patterns = [
-    /[Ss]iège\s+social\s*:\s*([^\n]{5,120})/,
-    /[Aa]dresse\s+du\s+siège\s*:\s*([^\n]{5,120})/,
+  const labels = [
+    /[Aa]dresse\s+du\s+siège\s+social/,
+    /[Aa]dresse\s+du\s+siège/,
+    /[Ss]iège\s+social/,
   ];
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) return champ(m[1].trim(), "faible", m[0].trim());
+  for (const labelRe of labels) {
+    const found = findAfterLabel(text, labelRe, 120);
+    if (found) return champ(found.valeur, "faible", found.source);
   }
   return vide();
 }
 
 function extractDirigeant(text: string): ChampExtrait {
-  const patterns = [
-    /[Gg]érant\s*:\s*([^\n]{3,80})/,
-    /[Pp]résident\s*:\s*([^\n]{3,80})/,
-    /[Dd]irecteur\s+général\s*:\s*([^\n]{3,80})/,
-    /[Aa]dministrateur(?:\s+unique)?\s*:\s*([^\n]{3,80})/,
+  const labels = [
+    /[Gg]érant/,
+    /[Pp]résident/,
+    /[Dd]irecteur\s+général/,
+    /[Aa]dministrateur(?:\s+unique)?/,
   ];
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) return champ(m[1].trim(), "moyenne", m[0].trim());
+  for (const labelRe of labels) {
+    const found = findAfterLabel(text, labelRe, 80);
+    if (found) return champ(found.valeur, "moyenne", found.source);
   }
   return vide();
 }
 
 function extractActivite(text: string): ChampExtrait {
-  const patterns = [
-    /[Aa]ctivité\s+principale\s+exercée\s*:\s*([^\n]{5,150})/,
-    /[Aa]ctivité\s*:\s*([^\n]{5,150})/,
-    /[Oo]bjet\s+(?:social\s*)?:\s*([^\n]{5,150})/,
+  const labels = [
+    /[Aa]ctivités?\s+principales?\s+exercées?/,
+    /[Aa]ctivité\(s\)\s+exercée\(s\)/,
+    /[Aa]ctivité\s+principale\s+exercée/,
+    /[Aa]ctivités?\s+principales?/,
+    /[Aa]ctivité/,
+    /[Oo]bjet\s+(?:social)?/,
   ];
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) return champ(m[1].trim(), "faible", m[0].trim());
+  for (const labelRe of labels) {
+    const found = findAfterLabel(text, labelRe, 150);
+    if (found) return champ(found.valeur, "faible", found.source);
   }
   return vide();
 }
 
 function extractDateImmatriculation(text: string): ChampExtrait {
-  const patterns = [
-    /[Dd]ate\s+d.immatricul[a-zé]+\s*:\s*(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4})/,
-    /[Ii]mmatricul[a-zé]+\s+le\s+(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4})/,
+  const labels = [
+    /[Dd]ate\s+d.immatricul[a-zé]+/,
+    /[Ii]mmatricul[a-zé]+\s+le/,
   ];
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) return champ(m[1].trim(), "haute", m[0].trim());
+  for (const labelRe of labels) {
+    const found = findDateAfterLabel(text, labelRe);
+    if (found) return champ(found.valeur, "haute", found.source);
   }
   return vide();
 }

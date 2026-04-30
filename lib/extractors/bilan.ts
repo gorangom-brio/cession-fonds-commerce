@@ -1,4 +1,5 @@
 import type { ChampExtrait, ExtractionBilan, NiveauConfiance } from "./types";
+import { findAfterLabel, extractPremierMontant } from "./helpers";
 
 function champ<T>(
   valeur: T | null,
@@ -12,25 +13,15 @@ function vide<T = string>(): ChampExtrait<T> {
   return { valeur: null, confiance: "non_extractible" };
 }
 
-// Nettoie une chaîne numérique française : "1 234 567,89" → 1234567.89
-function parseEuros(raw: string): number | null {
-  const cleaned = raw.trim().replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
-  const val = parseFloat(cleaned);
-  return isNaN(val) ? null : val;
-}
-
 function extractExercice(text: string): ChampExtrait<number> {
-  // "Exercice clos le 31/12/2023" ou "Exercice 2023"
   const labelled = text.match(
     /[Ee]xercice\s+(?:clos\s+(?:le\s+)?(?:\d{1,2}[\/\-]\d{1,2}[\/\-])?)?(20\d{2})/
   );
   if (labelled) return champ(parseInt(labelled[1]), "haute", labelled[0].trim());
 
-  // Date de clôture "31/12/2023"
   const dateCloture = text.match(/31[\/\-]12[\/\-](20\d{2})/);
   if (dateCloture) return champ(parseInt(dateCloture[1]), "haute", dateCloture[0]);
 
-  // Année isolée la plus récente dans la plage vraisemblable
   const years = [...text.matchAll(/\b(20\d{2})\b/g)]
     .map((m) => parseInt(m[1]))
     .filter((y) => y >= 2018 && y <= 2026);
@@ -42,47 +33,47 @@ function extractExercice(text: string): ChampExtrait<number> {
 }
 
 function extractCA(text: string): ChampExtrait<number> {
-  const patterns = [
-    /[Cc]hiffre\s+d.affaires\s+net\b[^\d-]*([\d\s,\.]+)/,
-    /[Cc]hiffre\s+d.affaires\b[^\d-]*([\d\s,\.]+)/,
-    /\bCA\s+net\b[^\d-]*([\d\s,\.]+)/,
+  const labels = [
+    /[Cc]hiffre\s+d.affaires\s+net/,
+    /[Cc]hiffre\s+d.affaires/,
+    /\bCA\s+net\b/,
   ];
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) {
-      const val = parseEuros(m[1]);
-      if (val !== null && val > 0) return champ(val, "moyenne", m[0].trim());
+  for (const labelRe of labels) {
+    const found = findAfterLabel(text, labelRe, 60);
+    if (found) {
+      const val = extractPremierMontant(found.valeur);
+      if (val !== null && val > 0) return champ(val, "moyenne", found.source);
     }
   }
   return vide<number>();
 }
 
 function extractResultatNet(text: string): ChampExtrait<number> {
-  const patterns = [
-    /[Rr]ésultat\s+de\s+l.exercice\b[^\d-]*([-\d\s,\.]+)/,
-    /[Rr]ésultat\s+net\b[^\d-]*([-\d\s,\.]+)/,
-    /RÉSULTAT\s+NET\b[^\d-]*([-\d\s,\.]+)/,
+  const labels = [
+    /[Rr]ésultat\s+de\s+l.exercice/,
+    /[Rr]ésultat\s+net/,
+    /RÉSULTAT\s+NET/,
   ];
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) {
-      const val = parseEuros(m[1]);
-      if (val !== null) return champ(val, "moyenne", m[0].trim());
+  for (const labelRe of labels) {
+    const found = findAfterLabel(text, labelRe, 60);
+    if (found) {
+      const val = extractPremierMontant(found.valeur);
+      if (val !== null) return champ(val, "moyenne", found.source);
     }
   }
   return vide<number>();
 }
 
 function extractCapitauxPropres(text: string): ChampExtrait<number> {
-  const patterns = [
-    /[Cc]apitaux\s+propres\b[^\d-]*([\d\s,\.]+)/,
-    /CAPITAUX\s+PROPRES\b[^\d-]*([\d\s,\.]+)/,
+  const labels = [
+    /[Cc]apitaux\s+propres/,
+    /CAPITAUX\s+PROPRES/,
   ];
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) {
-      const val = parseEuros(m[1]);
-      if (val !== null && val > 0) return champ(val, "faible", m[0].trim());
+  for (const labelRe of labels) {
+    const found = findAfterLabel(text, labelRe, 60);
+    if (found) {
+      const val = extractPremierMontant(found.valeur);
+      if (val !== null && val > 0) return champ(val, "faible", found.source);
     }
   }
   return vide<number>();

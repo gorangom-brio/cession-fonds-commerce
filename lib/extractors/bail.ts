@@ -1,4 +1,5 @@
 import type { ChampExtrait, ExtractionBail, NiveauConfiance } from "./types";
+import { parseMonetaire } from "./helpers";
 
 function champ<T>(
   valeur: T | null,
@@ -10,12 +11,6 @@ function champ<T>(
 
 function vide<T = string>(): ChampExtrait<T> {
   return { valeur: null, confiance: "non_extractible" };
-}
-
-function parseEuros(raw: string): number | null {
-  const cleaned = raw.trim().replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
-  const val = parseFloat(cleaned);
-  return isNaN(val) ? null : val;
 }
 
 function extractBailleur(text: string): ChampExtrait {
@@ -103,7 +98,7 @@ function extractLoyer(text: string): ChampExtrait<number> {
     /loyer\s+(?:annuel|hors\s+taxes?\s+annuel)[^\d]*([\d\s,\.]+)\s*€/i
   );
   if (annuel) {
-    const val = parseEuros(annuel[1]);
+    const val = parseMonetaire(annuel[1]);
     if (val !== null && val > 0) return champ(val, "moyenne", annuel[0].trim());
   }
   // Loyer X € par an / HT/an
@@ -111,7 +106,7 @@ function extractLoyer(text: string): ChampExtrait<number> {
     /loyer[^\d]*([\d\s,\.]+)\s*€\s*(?:hors\s+taxes?\s+)?(?:par\s+an|\/\s*an|HT\s*\/\s*an)/i
   );
   if (parAn) {
-    const val = parseEuros(parAn[1]);
+    const val = parseMonetaire(parAn[1]);
     if (val !== null && val > 0) return champ(val, "moyenne", parAn[0].trim());
   }
   // Loyer mensuel × 12
@@ -119,7 +114,7 @@ function extractLoyer(text: string): ChampExtrait<number> {
     /loyer[^\d]*([\d\s,\.]+)\s*€\s*(?:par\s+mois|\/\s*mois|mensuel)/i
   );
   if (mensuel) {
-    const val = parseEuros(mensuel[1]);
+    const val = parseMonetaire(mensuel[1]);
     if (val !== null && val > 0)
       return champ(val * 12, "faible", mensuel[0].trim() + " (×12)");
   }
@@ -134,7 +129,7 @@ function extractDepotGarantie(text: string): ChampExtrait<number> {
   for (const p of patterns) {
     const m = text.match(p);
     if (m) {
-      const val = parseEuros(m[1]);
+      const val = parseMonetaire(m[1]);
       if (val !== null && val > 0) return champ(val, "moyenne", m[0].trim());
     }
   }
