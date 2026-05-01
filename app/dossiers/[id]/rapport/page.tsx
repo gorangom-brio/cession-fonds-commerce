@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import DossierStepper from "../DossierStepper";
+import SyntheseExtractionsPanel from "./SyntheseExtractionsPanel";
+
+const IS_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ── Données simulées ────────────────────────────────────────────────────────
 
@@ -90,6 +94,7 @@ const CHAMPS_VIDES: CaptureChamps = {
 
 export default function DossierRapportPage() {
   const { id } = useParams<{ id: string }>();
+  const modeReel = !!id && IS_UUID.test(id);
   const [champs, setChamps] = useState<CaptureChamps>(CHAMPS_VIDES);
   const [envoye, setEnvoye] = useState(false);
   const [persistanceOk, setPersistanceOk] = useState<boolean | null>(null);
@@ -169,6 +174,9 @@ export default function DossierRapportPage() {
           </strong>
         </p>
       </section>
+
+      {/* Synthèse documentaire (V2-26) — opt-in, sans persistance */}
+      <SyntheseExtractionsPanel id={id ?? ""} modeReel={modeReel} />
 
       {/* Pièces analysées */}
       <section className="space-y-3">

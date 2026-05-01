@@ -48,6 +48,7 @@ Le tunnel fonctionne en **deux modes** :
 - **Persistance du questionnaire de situation** dans `cessions.situation_declaree` (colonne `jsonb`) — lecture côté serveur au chargement, sauvegarde silencieuse côté client avec debounce 800 ms.
 - **Fallback localStorage** : si la sauvegarde Supabase échoue (réseau, RLS), les réponses sont conservées dans le navigateur sans bloquer l'interface.
 - **Capture lead rapport PDF** : nom, email, rôle, consentements enregistrés dans la table `report_leads`.
+- **Synthèse documentaire dans le rapport** (V2-26) : bouton opt-in qui appelle `/api/dossiers/[id]/structured-extraction` et affiche, en complément des blocs hardcodés, les informations détectées par document et des constats factuels (`information` / `attention` / `verification`). Aucune persistance, aucune IA, wording strictement indicatif.
 - Stepper de progression sur toutes les pages `[id]/*`.
 
 ---
@@ -202,7 +203,7 @@ Le questionnaire sert uniquement à **adapter l'affichage** de la checklist. Il 
 |---|---|
 | V2-24 | Extraction structurée des informations clés par type documentaire |
 | V2-25 | Audit juridique assisté IA (branchement Anthropic) |
-| V2-26 | Persistance structurée de l'audit juridique |
+| V2-26 | ✅ Synthèse préparatoire dans le rapport, sans IA, sans persistance |
 | V2-27 | Génération PDF du rapport d'audit |
 | V2-28 | Validation avocat réelle (email ou webhook) |
 | V2-29 | Authentification / sécurisation du dossier par session |
