@@ -94,6 +94,23 @@ export default function DossierValidationAvocatPage() {
         source: "rapport_validation_avocat",
       });
       setPersistanceOk(true);
+
+      // Notification interne (V2-30) — fire-and-forget, n'impacte pas l'UX.
+      // La demande reste tracée en base même si la notification échoue.
+      fetch("/api/validation-requests/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dossier_id: id,
+          nom: champs.nom,
+          email: champs.email,
+          telephone: champs.telephone || null,
+          message: champs.message,
+          created_at: new Date().toISOString(),
+        }),
+      }).catch(() => {
+        // silencieux — la base est la source de vérité
+      });
     } catch (err) {
       console.warn(
         "[validation_requests] Demande non persistée (Supabase indisponible) :",
