@@ -105,6 +105,10 @@ export default function DossierRapportPage() {
     champs.role !== "" &&
     champs.consentementRapport;
 
+  const imprimer = () => {
+    if (typeof window !== "undefined") window.print();
+  };
+
   const set =
     (champ: keyof CaptureChamps) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -137,7 +141,9 @@ export default function DossierRapportPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-10">
-      <DossierStepper id={id} />
+      <div className="no-print">
+        <DossierStepper id={id} />
+      </div>
 
       {/* En-tête */}
       <div className="space-y-3">
@@ -153,6 +159,11 @@ export default function DossierRapportPage() {
         <p className="text-xs text-muted-foreground">
           Rapport généré en mode démo local — aucune analyse IA effectuée à ce stade.
         </p>
+        <div className="no-print pt-2">
+          <button type="button" onClick={imprimer} className="btn-primary">
+            Télécharger / imprimer le rapport
+          </button>
+        </div>
       </div>
 
       {/* Synthèse générale */}
@@ -293,15 +304,16 @@ export default function DossierRapportPage() {
         professionnel du droit.
       </div>
 
-      {/* ── Capture email ─────────────────────────────────────────────────── */}
-      <section className="rounded-lg border-2 border-navy-200 bg-navy-50 p-6 space-y-5">
+      {/* ── Capture lead ──────────────────────────────────────────────────── */}
+      <section className="no-print rounded-lg border-2 border-navy-200 bg-navy-50 p-6 space-y-5">
         <div className="space-y-1">
           <h2 className="text-xl font-semibold text-navy-900">
-            Recevoir mon rapport d&apos;audit PDF
+            Préparer la transmission à un professionnel
           </h2>
           <p className="text-sm text-muted-foreground">
-            Le rapport complet sera généré et envoyé à votre adresse email.
-            Renseignez vos coordonnées pour le recevoir.
+            Renseignez vos coordonnées pour accéder au rapport et préparer une
+            éventuelle transmission à un professionnel. Le rapport reste
+            consultable sur cette page et peut être téléchargé ou imprimé.
           </p>
         </div>
 
@@ -312,26 +324,31 @@ export default function DossierRapportPage() {
               <p className="text-2xl font-bold text-confidence-high">✓</p>
               <p className="text-base font-semibold text-navy-900">
                 {persistanceOk
-                  ? "Votre demande a bien été enregistrée."
-                  : "Votre demande de rapport PDF a bien été prise en compte."}
+                  ? "Vos coordonnées ont bien été enregistrées."
+                  : "Vos coordonnées ont bien été prises en compte."}
               </p>
               <p className="text-sm text-muted-foreground">
-                Dans la version finale, le rapport PDF sera généré et envoyé
-                automatiquement à{" "}
-                <strong className="text-navy-900">{champs.email}</strong>.
+                Votre rapport est prêt à être téléchargé ou imprimé.
               </p>
               {!persistanceOk && (
                 <p className="text-xs text-muted-foreground">
-                  Mode démo : votre demande est affichée localement, mais
-                  n&apos;a pas pu être enregistrée.
+                  Mode démo : vos coordonnées sont affichées localement, mais
+                  n&apos;ont pas pu être enregistrées côté serveur.
                 </p>
               )}
             </div>
 
             <div className="flex flex-wrap items-center gap-4">
+              <button
+                type="button"
+                onClick={imprimer}
+                className="btn-primary"
+              >
+                Télécharger / imprimer le rapport
+              </button>
               <Link
                 href={`/dossiers/${id}/validation-avocat`}
-                className="btn-primary"
+                className="btn-secondary"
               >
                 Demander une validation avocat
               </Link>
@@ -430,7 +447,8 @@ export default function DossierRapportPage() {
                   htmlFor="cap-consentement-rapport"
                   className="cursor-pointer text-sm text-navy-900"
                 >
-                  J&apos;accepte de recevoir mon rapport d&apos;audit par email.{" "}
+                  J&apos;accepte que mes coordonnées soient enregistrées pour
+                  ce rapport.{" "}
                   <span className="text-red-500">*</span>
                 </label>
               </div>
@@ -458,9 +476,9 @@ export default function DossierRapportPage() {
             </div>
 
             <p className="text-xs text-muted-foreground">
-              Les informations saisies sont utilisées uniquement pour vous
-              transmettre le rapport demandé et, si vous l&apos;acceptez, vous
-              recontacter au sujet de votre dossier.
+              Les informations saisies sont enregistrées pour assurer le suivi
+              de ce rapport et, si vous l&apos;acceptez, vous recontacter au
+              sujet de votre dossier.
             </p>
 
             <div className="flex flex-wrap items-center gap-4 pt-1">
@@ -469,7 +487,7 @@ export default function DossierRapportPage() {
                 className="btn-primary"
                 disabled={!peutSoumettre}
               >
-                Recevoir mon rapport PDF
+                Accéder au rapport
               </button>
               <Link href={`/dossiers/${id}/audit`} className="btn-secondary">
                 Revenir à l&apos;audit
@@ -477,8 +495,9 @@ export default function DossierRapportPage() {
             </div>
 
             <p className="text-xs text-muted-foreground">
-              Mode démo local — aucun envoi réel. La génération PDF et
-              l&apos;envoi seront activés lors du branchement production.
+              Aucun envoi par email n&apos;est effectué à ce stade. Vos
+              coordonnées sont enregistrées et le rapport reste accessible sur
+              cette page.
             </p>
           </form>
         )}
