@@ -1,16 +1,189 @@
 import Link from "next/link";
 import DossierStepper from "./DossierStepper";
+import type { SituationDossier } from "@/lib/situation";
+
+const IS_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const QUESTION_KEYS = [
+  "salaries",
+  "locaux_loues",
+  "acquereur_type",
+  "marque_enseigne",
+  "activite_reglementee",
+] as const;
+const NB_QUESTIONS = QUESTION_KEYS.length;
 
 type DossierDashboardPageProps = {
   params: Promise<{ id: string }>;
 };
 
+type DocumentMinimal = {
+  nom_fichier: string;
+  type_document: string | null;
+  analyse_effectuee: boolean;
+  nb_caracteres_extraits: number | null;
+  extraction_ok: boolean | null;
+};
+
+type Compteurs = {
+  totalDocs: number;
+  classifies: number;
+  aVerifier: number;
+  totalPdfs: number;
+  pdfsExploitables: number;
+  pdfsScannes: number;
+  pdfsEnAttente: number;
+  reponsesRenseignees: number;
+  questionnaireRempli: boolean;
+  auditCommence: boolean;
+};
+
+const COMPTEURS_VIDES: Compteurs = {
+  totalDocs: 0,
+  classifies: 0,
+  aVerifier: 0,
+  totalPdfs: 0,
+  pdfsExploitables: 0,
+  pdfsScannes: 0,
+  pdfsEnAttente: 0,
+  reponsesRenseignees: 0,
+  questionnaireRempli: false,
+  auditCommence: false,
+};
+
+function calculerCompteurs(
+  documents: DocumentMinimal[],
+  situation: SituationDossier,
+): Compteurs {
+  const totalDocs = documents.length;
+  const classifies = documents.filter(
+    (d) => d.type_document && d.type_document !== "autre",
+  ).length;
+  const aVerifier = totalDocs - classifies;
+
+  const pdfs = documents.filter((d) =>
+    d.nom_fichier.toLowerCase().endsWith(".pdf"),
+  );
+  const pdfsExploitables = pdfs.filter(
+    (d) => d.extraction_ok === true && (d.nb_caracteres_extraits ?? 0) > 0,
+  ).length;
+  const pdfsScannes = pdfs.filter(
+    (d) => d.extraction_ok === true && (d.nb_caracteres_extraits ?? 0) === 0,
+  ).length;
+  const pdfsEnAttente = pdfs.filter((d) => !d.analyse_effectuee).length;
+
+  const reponsesRenseignees = QUESTION_KEYS.filter((k) => {
+    const v = situation[k];
+    return v !== null && v !== undefined;
+  }).length;
+
+  return {
+    totalDocs,
+    classifies,
+    aVerifier,
+    totalPdfs: pdfs.length,
+    pdfsExploitables,
+    pdfsScannes,
+    pdfsEnAttente,
+    reponsesRenseignees,
+    questionnaireRempli: reponsesRenseignees > 0,
+    auditCommence: pdfs.some((d) => d.analyse_effectuee),
+  };
+}
+
+type Action = { texte: string; href: string };
+
+function calculerActions(id: string, c: Compteurs): Action[] {
+  const actions: Action[] = [];
+
+  if (c.totalDocs === 0) {
+    actions.push({
+      texte: "Déposer les premiers documents",
+      href: `/dossiers/${id}/documents`,
+    });
+  } else {
+    if (c.aVerifier > 0) {
+      actions.push({
+        texte: "Vérifier les documents non classifiés",
+        href: `/dossiers/${id}/documents`,
+      });
+    }
+    if (c.pdfsEnAttente > 0) {
+      actions.push({
+        texte: "Lancer l'extraction texte des PDF depuis la page audit",
+        href: `/dossiers/${id}/audit`,
+      });
+    }
+    if (!c.questionnaireRempli) {
+      actions.push({
+        texte: "Compléter le questionnaire de situation",
+        href: `/dossiers/${id}/audit`,
+      });
+    }
+  }
+
+  if (actions.length === 0) {
+    actions.push({
+      texte: "Consulter et imprimer le rapport préparatoire",
+      href: `/dossiers/${id}/rapport`,
+    });
+    actions.push({
+      texte: "Préparer la transmission à un professionnel",
+      href: `/dossiers/${id}/validation-avocat`,
+    });
+  }
+
+  return actions.slice(0, 3);
+}
+
+function formatDate(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat("fr-FR", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    }).format(new Date(iso));
+  } catch {
+    return "—";
+  }
+}
+
 export default async function DossierDashboardPage({
   params,
 }: DossierDashboardPageProps) {
   const { id } = await params;
+  const modeReel = IS_UUID.test(id);
 
-  const links = [
+  let compteurs: Compteurs = COMPTEURS_VIDES;
+  let dateCreation: string | null = null;
+  let erreurSupabase = false;
+
+  if (modeReel) {
+    try {
+      const { getCessionById, getDocumentsByCessionId } = await import(
+        "@/lib/supabase/server"
+      );
+      const [cession, docs] = await Promise.all([
+        getCessionById(id),
+        getDocumentsByCessionId(id),
+      ]);
+      const situation: SituationDossier =
+        cession.situation_declaree &&
+        typeof cession.situation_declaree === "object" &&
+        !Array.isArray(cession.situation_declaree)
+          ? (cession.situation_declaree as SituationDossier)
+          : {};
+      compteurs = calculerCompteurs(docs, situation);
+      dateCreation = cession.created_at;
+    } catch {
+      erreurSupabase = true;
+    }
+  }
+
+  const actions = calculerActions(id, compteurs);
+
+  const liens = [
     {
       href: `/dossiers/${id}/documents`,
       title: "Documents",
@@ -33,6 +206,19 @@ export default async function DossierDashboardPage({
     },
   ];
 
+  let phraseIntro: string;
+  if (modeReel && !erreurSupabase) {
+    phraseIntro = dateCreation
+      ? `Dossier créé le ${formatDate(dateCreation)}. Vue d'ensemble des pièces déposées et de l'avancement de l'audit.`
+      : "Vue d'ensemble des pièces déposées et de l'avancement de l'audit.";
+  } else if (modeReel && erreurSupabase) {
+    phraseIntro =
+      "Les données du dossier n'ont pas pu être récupérées pour le moment. Le tableau de bord s'affichera complètement une fois la connexion rétablie.";
+  } else {
+    phraseIntro =
+      "Mode démo — aucun dossier réel n'est associé à cette page. Les compteurs ci-dessous sont vides.";
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-8">
       <DossierStepper id={id} />
@@ -42,63 +228,117 @@ export default async function DossierDashboardPage({
         <h1 className="text-4xl font-bold text-navy-900">
           Tableau de bord du dossier
         </h1>
-        <p className="max-w-3xl text-lg text-muted-foreground">
-          Vue d&apos;ensemble du dossier d&apos;audit. Cette page servira de
-          point d&apos;entrée principal du parcours V2.
-        </p>
+        <p className="max-w-3xl text-lg text-muted-foreground">{phraseIntro}</p>
       </div>
 
+      {/* 4 cartes de synthèse */}
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-lg border border-border bg-white p-5 space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-navy-600">
-            Statut
-          </p>
-          <p className="text-lg font-semibold text-navy-900">Brouillon audit</p>
-          <p className="text-sm text-muted-foreground">
-            Dossier créé, analyse non lancée.
-          </p>
-        </div>
+        {/* Documents */}
         <div className="rounded-lg border border-border bg-white p-5 space-y-1">
           <p className="text-xs font-semibold uppercase tracking-wide text-navy-600">
             Documents
           </p>
-          <p className="text-lg font-semibold text-navy-900">À compléter</p>
+          <p className="text-2xl font-bold text-navy-900">
+            {compteurs.totalDocs}
+          </p>
           <p className="text-sm text-muted-foreground">
-            Bail, Kbis, bilans, pièces fiscales, contrats utiles.
+            {compteurs.totalDocs === 0
+              ? "Aucun document déposé pour le moment."
+              : `${compteurs.classifies} classifié${compteurs.classifies > 1 ? "s" : ""} · ${compteurs.aVerifier} à vérifier`}
           </p>
         </div>
+
+        {/* PDF */}
         <div className="rounded-lg border border-border bg-white p-5 space-y-1">
           <p className="text-xs font-semibold uppercase tracking-wide text-navy-600">
-            Audit
+            PDF
           </p>
-          <p className="text-lg font-semibold text-navy-900">Non lancé</p>
+          <p className="text-2xl font-bold text-navy-900">
+            {compteurs.pdfsExploitables}
+          </p>
           <p className="text-sm text-muted-foreground">
-            Classification, checklist et risques à venir.
+            {compteurs.totalPdfs === 0
+              ? "Aucun PDF déposé."
+              : `${compteurs.pdfsExploitables} exploitable${compteurs.pdfsExploitables > 1 ? "s" : ""} · ${compteurs.pdfsScannes} non lisible${compteurs.pdfsScannes > 1 ? "s" : ""} · ${compteurs.pdfsEnAttente} en attente d'extraction`}
           </p>
         </div>
+
+        {/* Questionnaire */}
         <div className="rounded-lg border border-border bg-white p-5 space-y-1">
           <p className="text-xs font-semibold uppercase tracking-wide text-navy-600">
-            Validation avocat
+            Questionnaire
           </p>
-          <p className="text-lg font-semibold text-navy-900">Non demandée</p>
+          <p className="text-2xl font-bold text-navy-900">
+            {compteurs.reponsesRenseignees}
+            <span className="text-base font-normal text-muted-foreground">
+              {" "}
+              / {NB_QUESTIONS}
+            </span>
+          </p>
           <p className="text-sm text-muted-foreground">
-            Le rapport pourra servir de support de transmission.
+            {compteurs.questionnaireRempli
+              ? `Rempli (${compteurs.reponsesRenseignees}/${NB_QUESTIONS})`
+              : "Non rempli"}
           </p>
+        </div>
+
+        {/* Avancement */}
+        <div className="rounded-lg border border-border bg-white p-5 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-navy-600">
+            Avancement
+          </p>
+          <ul className="space-y-1 text-sm text-navy-900">
+            <li>
+              Documents :{" "}
+              <span className="font-medium text-muted-foreground">
+                {compteurs.totalDocs > 0 ? "déposés" : "non encore déposés"}
+              </span>
+            </li>
+            <li>
+              Audit :{" "}
+              <span className="font-medium text-muted-foreground">
+                {compteurs.auditCommence ? "commencé" : "non encore lancé"}
+              </span>
+            </li>
+            <li>
+              Rapport :{" "}
+              <span className="font-medium text-muted-foreground">
+                consultable
+              </span>
+            </li>
+            <li>
+              Validation avocat :{" "}
+              <span className="font-medium text-muted-foreground">
+                non demandée
+              </span>
+            </li>
+          </ul>
         </div>
       </section>
 
-      <section className="rounded-lg border border-border bg-gray-50 p-6 space-y-4">
-        <h2 className="text-xl font-semibold text-navy-900">Prochaines étapes</h2>
-        <ol className="space-y-2 text-sm text-muted-foreground">
-          <li>1. Déposer les documents utiles dans le dossier</li>
-          <li>2. Lancer l&apos;audit documentaire</li>
-          <li>3. Générer un rapport d&apos;audit lisible</li>
-          <li>4. Demander une validation avocat si nécessaire</li>
+      {/* Prochaines actions */}
+      <section className="rounded-lg border border-border bg-gray-50 p-6 space-y-3">
+        <h2 className="text-xl font-semibold text-navy-900">
+          Prochaines actions
+        </h2>
+        <ol className="space-y-2 text-sm">
+          {actions.map((action, index) => (
+            <li key={action.href + action.texte}>
+              <Link
+                href={action.href}
+                className="inline-flex items-start gap-2 text-navy-700 hover:text-navy-900 hover:underline transition-colors"
+              >
+                <span className="font-bold shrink-0">{index + 1}.</span>
+                <span>{action.texte}</span>
+              </Link>
+            </li>
+          ))}
         </ol>
       </section>
 
+      {/* 4 cartes de navigation */}
       <section className="grid gap-4 md:grid-cols-2">
-        {links.map((link) => (
+        {liens.map((link) => (
           <Link
             key={link.href}
             href={link.href}

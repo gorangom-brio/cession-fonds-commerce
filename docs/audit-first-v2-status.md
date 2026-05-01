@@ -50,6 +50,7 @@ Le tunnel fonctionne en **deux modes** :
 - **Capture lead rapport PDF** : nom, email, rôle, consentements enregistrés dans la table `report_leads`.
 - **Synthèse documentaire dans le rapport** (V2-26) : bouton opt-in qui appelle `/api/dossiers/[id]/structured-extraction` et affiche, en complément des blocs hardcodés, les informations détectées par document et des constats factuels (`information` / `attention` / `verification`). Aucune persistance, aucune IA, wording strictement indicatif.
 - **Rapport téléchargeable / imprimable** (V2-27) : bouton "Télécharger / imprimer le rapport" qui appelle `window.print()` ; CSS print A4 minimale ; stepper, formulaire de capture et CTA masqués à l'impression. Wording de la capture lead reformulé : plus de promesse d'envoi par email — les coordonnées sont enregistrées, le rapport reste accessible sur la page.
+- **Dashboard dossier réel** (V2-28) : `/dossiers/[id]` est désormais un server component qui lit `getCessionById` + `getDocumentsByCessionId` en `Promise.all`. Quatre cartes de synthèse alimentées par les données réelles (Documents déposés/classifiés/à vérifier · PDF exploitables/scannés/en attente · Questionnaire n/5 · Avancement). Section "Prochaines actions" limitée à 3 actions dérivées de règles simples. Mode démo et fallback Supabase indisponible préservés. Aucun affichage de donnée personnelle, aucune table nouvelle.
 - Stepper de progression sur toutes les pages `[id]/*`.
 
 ---
@@ -206,8 +207,9 @@ Le questionnaire sert uniquement à **adapter l'affichage** de la checklist. Il 
 | V2-25 | Audit juridique assisté IA (branchement Anthropic) |
 | V2-26 | ✅ Synthèse préparatoire dans le rapport, sans IA, sans persistance |
 | V2-27 | ✅ Rapport téléchargeable / imprimable via `window.print()`, capture lead reformulée |
-| V2-28 | Validation avocat réelle (email ou webhook) |
-| V2-29 | Authentification / sécurisation du dossier par session |
+| V2-28 | ✅ Dashboard dossier réel basé sur cession + documents + situation_declaree |
+| V2-29 | Validation avocat réelle (email ou webhook) |
+| V2-30 | Authentification / sécurisation du dossier par session |
 
 ---
 
