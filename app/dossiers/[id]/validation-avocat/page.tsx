@@ -5,6 +5,9 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 import DossierStepper from "../DossierStepper";
 
+const IS_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 type Champs = {
   nom: string;
   email: string;
@@ -53,8 +56,11 @@ const etapesValidation = [
 
 export default function DossierValidationAvocatPage() {
   const { id } = useParams<{ id: string }>();
+  const modeReel = !!id && IS_UUID.test(id);
   const [champs, setChamps] = useState<Champs>(CHAMPS_VIDES);
   const [envoye, setEnvoye] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [persistanceOk, setPersistanceOk] = useState<boolean | null>(null);
 
   const peutSoumettre =
     champs.nom.trim().length > 0 &&
@@ -62,10 +68,42 @@ export default function DossierValidationAvocatPage() {
     champs.message.trim().length > 0 &&
     champs.consentement;
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!peutSoumettre) return;
-    setEnvoye(true);
+    if (!peutSoumettre || submitting) return;
+
+    if (!modeReel) {
+      setPersistanceOk(false);
+      setEnvoye(true);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const { insertValidationRequest } = await import(
+        "@/lib/supabase/client"
+      );
+      await insertValidationRequest({
+        cession_id: id,
+        dossier_id: id,
+        nom: champs.nom,
+        email: champs.email,
+        telephone: champs.telephone || null,
+        message: champs.message,
+        consentement: champs.consentement,
+        source: "rapport_validation_avocat",
+      });
+      setPersistanceOk(true);
+    } catch (err) {
+      console.warn(
+        "[validation_requests] Demande non persistée (Supabase indisponible) :",
+        err
+      );
+      setPersistanceOk(false);
+    } finally {
+      setSubmitting(false);
+      setEnvoye(true);
+    }
   };
 
   const set = (champ: keyof Champs) =>
@@ -87,22 +125,26 @@ export default function DossierValidationAvocatPage() {
         <div className="rounded-lg border border-confidence-high/30 bg-confidence-high/10 p-8 space-y-4 text-center">
           <p className="text-2xl font-bold text-confidence-high">✓</p>
           <p className="text-lg font-semibold text-navy-900">
-            Votre demande a bien été prise en compte.
+            Votre demande a bien été enregistrée.
           </p>
           <p className="text-sm text-muted-foreground">
-            Un avocat spécialisé prendra contact avec vous à l&apos;adresse{" "}
-            <strong>{champs.email}</strong> pour qualifier le dossier et vous
-            accompagner dans la suite de la cession.
+            Elle sera traitée manuellement. Vous pourrez être recontacté à
+            l&apos;adresse <strong>{champs.email}</strong>. Aucun envoi
+            automatique à un avocat n&apos;est effectué à ce stade.
           </p>
-          <p className="text-xs text-muted-foreground">
-            Mode démo local — aucun envoi réel effectué.
-          </p>
+          {persistanceOk === false && (
+            <p className="text-xs text-muted-foreground">
+              {modeReel
+                ? "L'enregistrement serveur n'a pas pu être confirmé. Vos coordonnées sont affichées localement uniquement."
+                : "Mode démo local — aucun enregistrement en base. Vos coordonnées sont affichées uniquement sur cette page."}
+            </p>
+          )}
         </div>
 
         <div className="disclaimer">
           Cette demande ne constitue pas une consultation juridique et
-          n&apos;engage aucun avocat. La transmission réelle sera activée lors
-          du branchement de la plateforme en production.
+          n&apos;engage aucun avocat. Aucun mandat n&apos;est accepté
+          automatiquement.
         </div>
 
         <div className="flex flex-wrap gap-4">
@@ -277,9 +319,9 @@ export default function DossierValidationAvocatPage() {
             <button
               type="submit"
               className="btn-primary"
-              disabled={!peutSoumettre}
+              disabled={!peutSoumettre || submitting}
             >
-              Envoyer la demande
+              {submitting ? "Envoi en cours…" : "Envoyer la demande"}
             </button>
             <Link href={`/dossiers/${id}/rapport`} className="btn-secondary">
               Revenir au rapport
@@ -287,8 +329,9 @@ export default function DossierValidationAvocatPage() {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Mode démo local — aucun envoi réel. La transmission sera activée
-            lors du branchement production.
+            {modeReel
+              ? "Vos coordonnées sont enregistrées en base et la demande est tracée pour traitement manuel. Aucun envoi automatique à un avocat n'est effectué à ce stade."
+              : "Mode démo local — aucun enregistrement en base. La persistance réelle n'est active que pour les dossiers identifiés par un UUID Supabase."}
           </p>
         </form>
       </section>

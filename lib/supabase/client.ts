@@ -16,6 +16,8 @@ type CessionRow = Database["public"]["Tables"]["cessions"]["Row"];
 type CessionUpdate = Database["public"]["Tables"]["cessions"]["Update"];
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 type ReportLeadInsert = Database["public"]["Tables"]["report_leads"]["Insert"];
+type ValidationRequestInsert =
+  Database["public"]["Tables"]["validation_requests"]["Insert"];
 
 let browserClient: SupabaseClient<Database> | null = null;
 
@@ -136,6 +138,18 @@ export async function insertReportLead(lead: ReportLeadInsert): Promise<void> {
 
   if (error) {
     throw new Error(`Erreur insertion lead : ${error.message}`);
+  }
+}
+
+export async function insertValidationRequest(
+  payload: ValidationRequestInsert
+): Promise<void> {
+  const { error } = await getSupabaseClient()
+    .from("validation_requests")
+    .insert(payload);
+
+  if (error) {
+    throw new Error(`Erreur insertion demande validation : ${error.message}`);
   }
 }
 

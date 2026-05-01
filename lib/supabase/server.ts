@@ -83,6 +83,26 @@ export async function getDocumentsByCessionId(cessionId: string) {
   return data ?? [];
 }
 
+export async function getLastValidationRequestDate(
+  cessionId: string
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("validation_requests")
+    .select("created_at")
+    .eq("cession_id", cessionId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      `Erreur lecture validation_requests : ${error.message}`
+    );
+  }
+
+  return data?.created_at ?? null;
+}
+
 export async function updateCessionAnalysis(
   cessionId: string,
   updates: Database["public"]["Tables"]["cessions"]["Update"]

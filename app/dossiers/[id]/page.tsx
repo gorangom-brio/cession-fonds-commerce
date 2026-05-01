@@ -94,7 +94,11 @@ function calculerCompteurs(
 
 type Action = { texte: string; href: string };
 
-function calculerActions(id: string, c: Compteurs): Action[] {
+function calculerActions(
+  id: string,
+  c: Compteurs,
+  validationDejaDemandee: boolean,
+): Action[] {
   const actions: Action[] = [];
 
   if (c.totalDocs === 0) {
@@ -128,10 +132,12 @@ function calculerActions(id: string, c: Compteurs): Action[] {
       texte: "Consulter et imprimer le rapport préparatoire",
       href: `/dossiers/${id}/rapport`,
     });
-    actions.push({
-      texte: "Préparer la transmission à un professionnel",
-      href: `/dossiers/${id}/validation-avocat`,
-    });
+    if (!validationDejaDemandee) {
+      actions.push({
+        texte: "Préparer la transmission à un professionnel",
+        href: `/dossiers/${id}/validation-avocat`,
+      });
+    }
   }
 
   return actions.slice(0, 3);
@@ -157,16 +163,20 @@ export default async function DossierDashboardPage({
 
   let compteurs: Compteurs = COMPTEURS_VIDES;
   let dateCreation: string | null = null;
+  let validationDate: string | null = null;
   let erreurSupabase = false;
 
   if (modeReel) {
     try {
-      const { getCessionById, getDocumentsByCessionId } = await import(
-        "@/lib/supabase/server"
-      );
-      const [cession, docs] = await Promise.all([
+      const {
+        getCessionById,
+        getDocumentsByCessionId,
+        getLastValidationRequestDate,
+      } = await import("@/lib/supabase/server");
+      const [cession, docs, lastValidation] = await Promise.all([
         getCessionById(id),
         getDocumentsByCessionId(id),
+        getLastValidationRequestDate(id),
       ]);
       const situation: SituationDossier =
         cession.situation_declaree &&
@@ -176,12 +186,13 @@ export default async function DossierDashboardPage({
           : {};
       compteurs = calculerCompteurs(docs, situation);
       dateCreation = cession.created_at;
+      validationDate = lastValidation;
     } catch {
       erreurSupabase = true;
     }
   }
 
-  const actions = calculerActions(id, compteurs);
+  const actions = calculerActions(id, compteurs, validationDate !== null);
 
   const liens = [
     {
@@ -309,7 +320,9 @@ export default async function DossierDashboardPage({
             <li>
               Validation avocat :{" "}
               <span className="font-medium text-muted-foreground">
-                non demandée
+                {validationDate
+                  ? `demandée le ${formatDate(validationDate)}`
+                  : "non demandée"}
               </span>
             </li>
           </ul>

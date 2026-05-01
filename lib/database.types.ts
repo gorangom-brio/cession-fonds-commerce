@@ -215,6 +215,56 @@ export interface Database {
           }
         ];
       };
+      validation_requests: {
+        Row: {
+          id: string;
+          created_at: string;
+          cession_id: string | null;
+          dossier_id: string;
+          nom: string;
+          email: string;
+          telephone: string | null;
+          message: string;
+          consentement: boolean;
+          source: string;
+          statut: "nouveau" | "en_cours" | "traite" | "clos";
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          cession_id?: string | null;
+          dossier_id: string;
+          nom: string;
+          email: string;
+          telephone?: string | null;
+          message: string;
+          consentement: boolean;
+          source?: string;
+          statut?: "nouveau" | "en_cours" | "traite" | "clos";
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          cession_id?: string | null;
+          dossier_id?: string;
+          nom?: string;
+          email?: string;
+          telephone?: string | null;
+          message?: string;
+          consentement?: boolean;
+          source?: string;
+          statut?: "nouveau" | "en_cours" | "traite" | "clos";
+        };
+        Relationships: [
+          {
+            foreignKeyName: "validation_requests_cession_id_fkey";
+            columns: ["cession_id"];
+            isOneToOne: false;
+            referencedRelation: "cessions";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       documents: {
         Row: {
           id: string;

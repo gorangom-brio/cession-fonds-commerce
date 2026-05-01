@@ -51,6 +51,7 @@ Le tunnel fonctionne en **deux modes** :
 - **Synthèse documentaire dans le rapport** (V2-26) : bouton opt-in qui appelle `/api/dossiers/[id]/structured-extraction` et affiche, en complément des blocs hardcodés, les informations détectées par document et des constats factuels (`information` / `attention` / `verification`). Aucune persistance, aucune IA, wording strictement indicatif.
 - **Rapport téléchargeable / imprimable** (V2-27) : bouton "Télécharger / imprimer le rapport" qui appelle `window.print()` ; CSS print A4 minimale ; stepper, formulaire de capture et CTA masqués à l'impression. Wording de la capture lead reformulé : plus de promesse d'envoi par email — les coordonnées sont enregistrées, le rapport reste accessible sur la page.
 - **Dashboard dossier réel** (V2-28) : `/dossiers/[id]` est désormais un server component qui lit `getCessionById` + `getDocumentsByCessionId` en `Promise.all`. Quatre cartes de synthèse alimentées par les données réelles (Documents déposés/classifiés/à vérifier · PDF exploitables/scannés/en attente · Questionnaire n/5 · Avancement). Section "Prochaines actions" limitée à 3 actions dérivées de règles simples. Mode démo et fallback Supabase indisponible préservés. Aucun affichage de donnée personnelle, aucune table nouvelle.
+- **Validation avocat persistée** (V2-29) : nouvelle table `validation_requests` (id, cession_id, dossier_id, nom, email, telephone, message, consentement, source, statut, created_at). RLS activée : `INSERT` ouvert à `anon`, aucune lecture client — la lecture passe par la clé service-role côté serveur. La page `/dossiers/[id]/validation-avocat` persiste réellement la demande au submit avec fallback `try/catch` (UX non bloquée). Le dashboard affiche désormais "Validation avocat : demandée le JJ/MM/AAAA" si une demande existe, sinon "non demandée". Aucun envoi email automatique, aucun engagement d'avocat.
 - Stepper de progression sur toutes les pages `[id]/*`.
 
 ---
@@ -208,7 +209,7 @@ Le questionnaire sert uniquement à **adapter l'affichage** de la checklist. Il 
 | V2-26 | ✅ Synthèse préparatoire dans le rapport, sans IA, sans persistance |
 | V2-27 | ✅ Rapport téléchargeable / imprimable via `window.print()`, capture lead reformulée |
 | V2-28 | ✅ Dashboard dossier réel basé sur cession + documents + situation_declaree |
-| V2-29 | Validation avocat réelle (email ou webhook) |
+| V2-29 | ✅ Demande de validation avocat persistée en base (table `validation_requests`) |
 | V2-30 | Authentification / sécurisation du dossier par session |
 
 ---
