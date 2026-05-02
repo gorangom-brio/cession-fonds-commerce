@@ -12,11 +12,17 @@ import type {
   StructuredExtractionResponse,
 } from "@/lib/extractors/types";
 
-// ── Types internes ───────────────────────────────────────────────────────────
+type StructuredExtractionApiResponse = StructuredExtractionResponse & {
+  messages?: string[];
+  documents_non_analyses?: Array<{
+    document_id: string;
+    nom_fichier: string;
+    raison: string;
+  }>;
+  error?: string;
+};
 
 type Status = "idle" | "loading" | "done" | "error";
-
-// ── Formateurs ───────────────────────────────────────────────────────────────
 
 function formatEuros(v: number): string {
   return new Intl.NumberFormat("fr-FR", {
@@ -25,8 +31,6 @@ function formatEuros(v: number): string {
     maximumFractionDigits: 0,
   }).format(v);
 }
-
-// ── Tri et styles des constats ───────────────────────────────────────────────
 
 const NIVEAU_STYLE: Record<NiveauConstat, string> = {
   attention: "bg-amber-50 text-amber-900 border-amber-200",
@@ -45,8 +49,6 @@ const NIVEAU_ORDRE: Record<NiveauConstat, number> = {
   verification: 1,
   information: 2,
 };
-
-// ── Carte résumé compact par document ────────────────────────────────────────
 
 function ResumeDoc({ doc }: { doc: DocumentExtrait }) {
   if ("non_extractible" in doc.extraction) return null;
@@ -118,8 +120,6 @@ function ResumeDoc({ doc }: { doc: DocumentExtrait }) {
   );
 }
 
-// ── Panneau principal ────────────────────────────────────────────────────────
-
 export default function SyntheseExtractionsPanel({
   id,
   modeReel,
@@ -128,8 +128,8 @@ export default function SyntheseExtractionsPanel({
   modeReel: boolean;
 }) {
   const [status, setStatus] = useState<Status>("idle");
-  const [result, setResult] = useState<StructuredExtractionResponse | null>(
-    null,
+  const [result, setResult] = useState<StructuredExtractionApiResponse | null>(
+    null
   );
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -150,17 +150,26 @@ export default function SyntheseExtractionsPanel({
     setStatus("loading");
     setResult(null);
     setErreur(null);
+
     try {
       const res = await fetch(`/api/dossiers/${id}/structured-extraction`, {
         method: "POST",
       });
-      if (!res.ok) throw new Error(`Erreur serveur (${res.status})`);
-      const data: StructuredExtractionResponse = await res.json();
+      const data = (await res.json()) as StructuredExtractionApiResponse;
+
+      if (!res.ok) {
+        throw new Error(
+          data.error ?? `Erreur serveur (${res.status}). Réessayez plus tard.`
+        );
+      }
+
       setResult(data);
       setStatus("done");
-    } catch {
+    } catch (err) {
       setErreur(
-        "La synthèse n'a pas pu être générée. Vérifiez que des PDF ont été déposés pour ce dossier.",
+        err instanceof Error
+          ? err.message
+          : "La synthèse n'a pas pu être générée. Vérifiez que des PDF ont été déposés pour ce dossier."
       );
       setStatus("error");
     }
@@ -168,15 +177,15 @@ export default function SyntheseExtractionsPanel({
 
   const constats: Constat[] = result ? genererConstats(result.documents) : [];
   const constatsTries = [...constats].sort(
-    (a, b) => NIVEAU_ORDRE[a.niveau] - NIVEAU_ORDRE[b.niveau],
+    (a, b) => NIVEAU_ORDRE[a.niveau] - NIVEAU_ORDRE[b.niveau]
   );
   const documentsExploitables =
     result?.documents.filter((d) => !("non_extractible" in d.extraction)) ?? [];
   const total = result?.documents.length ?? 0;
+  const documentsNonAnalyses = result?.documents_non_analyses ?? [];
 
   return (
     <section className="space-y-5 rounded-lg border border-border bg-white p-6">
-      {/* En-tête */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <h2 className="text-xl font-semibold text-navy-900">
@@ -203,7 +212,6 @@ export default function SyntheseExtractionsPanel({
         </button>
       </div>
 
-      {/* État initial */}
       {status === "idle" && (
         <p className="text-sm italic text-muted-foreground">
           Cliquez sur le bouton ci-dessus pour générer une synthèse à partir
@@ -211,26 +219,35 @@ export default function SyntheseExtractionsPanel({
         </p>
       )}
 
-      {/* Erreur */}
       {status === "error" && erreur && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
           {erreur}
         </div>
       )}
 
-      {/* Résultats */}
       {status === "done" && result && (
         <div className="space-y-5">
+          {result.messages && result.messages.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+              <ul className="list-inside list-disc space-y-1">
+                {result.messages.map((message) => (
+                  <li key={message}>{message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {total === 0 ? (
             <p className="text-sm italic text-muted-foreground">
-              Aucun document PDF n&apos;a été détecté pour ce dossier.
+              {documentsNonAnalyses.length > 0
+                ? "Aucun PDF n'a pu être analysé automatiquement dans cette tentative."
+                : "Aucun document PDF n'a été détecté pour ce dossier."}
             </p>
           ) : (
             <>
-              {/* Bandeau récapitulatif */}
               <p className="text-sm text-navy-800">
                 <strong>{total}</strong> document{total > 1 ? "s" : ""} PDF
-                analysé{total > 1 ? "s" : ""}
+                analysé{total > 1 ? "s" : ""} automatiquement
                 {documentsExploitables.length > 0 && (
                   <>
                     {" "}
@@ -242,7 +259,16 @@ export default function SyntheseExtractionsPanel({
                 .
               </p>
 
-              {/* Résumés par document exploitable */}
+              {documentsNonAnalyses.length > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {documentsNonAnalyses.length} fichier
+                  {documentsNonAnalyses.length > 1 ? "s" : ""} n&apos;ont pas
+                  été analysé
+                  {documentsNonAnalyses.length > 1 ? "s" : ""}
+                  automatiquement et restent à vérifier.
+                </p>
+              )}
+
               {documentsExploitables.length > 0 && (
                 <div className="space-y-2">
                   <h3 className="text-sm font-semibold text-navy-800">
@@ -256,7 +282,6 @@ export default function SyntheseExtractionsPanel({
                 </div>
               )}
 
-              {/* Constats */}
               {constatsTries.length > 0 && (
                 <div className="space-y-2">
                   <h3 className="text-sm font-semibold text-navy-800">

@@ -55,6 +55,7 @@ Le tunnel fonctionne en **deux modes** :
 - **Notification interne webhook** (V2-30) : nouvelle route `POST /api/validation-requests/notify` qui forward un payload formaté (`{ type, subject, dossier_id, nom, email, telephone, message, created_at, lien_dossier, mention }`) vers `VALIDATION_NOTIFY_WEBHOOK_URL` (Make / Zapier / n8n / Slack). Aucun document, texte extrait ou storage_path n'est transmis. Appel client en *fire-and-forget* après l'insert ; la base reste source de vérité. Timeout 5 s, fallback silencieux si webhook absent ou indisponible. `APP_BASE_URL` (server-side, sans préfixe `NEXT_PUBLIC_`) optionnelle pour construire le lien_dossier ; à défaut, dérivé des headers de la requête.
 - **Sécurisation minimale TypeScript et `.env.example`** (V2-31) : correction des erreurs `tsc --noEmit` dans `lib/supabase/client.ts` (helper `getEnv` qui narrow `string | undefined → string`, type alias `BrowserClient = ReturnType<typeof createClient<Database>>` à la place de `SupabaseClient<Database>` incompatible depuis `@supabase/supabase-js@2.47`). Aucune signature publique modifiée, aucun changement fonctionnel du tunnel audit-first et aucun changement visible pour l'utilisateur. La correction porte uniquement sur le typage et la validation des variables d'environnement côté client Supabase. `.env.example` réorganisé en *Obligatoires* (3 vars Supabase) / *Optionnelles* (Anthropic réservée future IA, webhook notification, app base URL) avec mention explicite de la nécessité en production de `VALIDATION_NOTIFY_WEBHOOK_URL`.
 - **Neutralisation des routes legacy avant démo** (V2-33) : les anciennes routes `/upload` et `/analyse` sont neutralisées et redirigées côté serveur vers `/dossiers/new`. Cela supprime deux surfaces obsolètes qui créaient ou lisaient des dossiers hors du tunnel V2 et affichaient encore une promesse d'analyse IA legacy. Aucun comportement du tunnel audit-first principal (`/dossiers/*`) n'est modifié. Aucune authentification ajoutée, aucune policy RLS modifiée, aucune migration, aucun changement Supabase. La recommandation reste inchangée : activer une **protection globale de déploiement** avant toute démo publique ou semi-publique.
+- **Anti-abus minimal avant démo** (V2-34) : rate-limit best-effort en mémoire sur `POST /api/dossiers/[id]/extract-text`, `POST /api/dossiers/[id]/structured-extraction` et `POST /api/validation-requests/notify`. Les routes d'extraction plafonnent désormais le traitement aux 5 premiers PDF éligibles par appel, ignorent automatiquement les fichiers trop volumineux (> 10 Mo) et ne renvoient plus `storage_path` au client sur `extract-text`. La route webhook valide désormais le format UUID du `dossier_id`, vérifie l'existence réelle de la cession avant envoi et peut ajouter un secret sortant optionnel `VALIDATION_NOTIFY_SECRET` via l'en-tête `X-Validation-Notify-Secret`. La page documents limite le lot sélectionné (10 fichiers max, 30 Mo max par lot, 10 Mo max par fichier) et restreint la démo à PDF / Word / Excel, sans images scannées. La protection globale de déploiement reste requise avant toute démo publique ou semi-publique. Aucun captcha ajouté, aucune auth complète, aucune migration RLS, aucun changement Supabase, aucune sécurité production complète.
 - Stepper de progression sur toutes les pages `[id]/*`.
 
 ---
@@ -203,17 +204,17 @@ Le questionnaire sert uniquement à **adapter l'affichage** de la checklist. Il 
 
 ---
 
-## Risques production non résolus par V2-33
+## Risques production non résolus par V2-34
 
-V2-33 neutralise deux routes legacy visibles (`/upload`, `/analyse`) et clarifie l'exigence de protection globale de déploiement avant démonstration. Cette mission **ne résout pas** les sujets suivants, qui restent ouverts avant toute exposition publique ou semi-publique plus large :
+V2-34 ajoute un lot défensif court pour plafonner, ralentir et filtrer certains abus côté routes serveur et côté upload UI. Cette mission **ne résout pas** les sujets suivants, qui restent ouverts avant toute exposition publique ou semi-publique plus large :
 
+- **Écritures browser → Supabase encore imparfaitement protégées** — `createCession`, `insertReportLead`, `insertValidationRequest` et `uploadDocument` passent toujours par le client browser avec la clé `anon`, hors rate-limit Next.js.
+- **Rate-limit mémoire non distribué** — les garde-fous V2-34 sont best-effort, en mémoire processus, et ne remplacent pas un vrai rate-limit partagé.
 - **Authentification complète** — l'accès au tunnel reste sans session utilisateur dédiée.
-- **Accès dossier par token** — aucun secret par dossier ni URL signée n'est ajouté en V2-33.
+- **Accès dossier par UUID** — l'accès direct par identifiant reste possible ; aucun secret par dossier ni URL signée n'est ajouté en V2-34.
 - **RLS Supabase complète** — RLS active uniquement sur `report_leads` et `validation_requests` (INSERT anon, aucune lecture client). Les politiques `cessions` et `documents` doivent toujours être vérifiées et durcies en Studio Supabase.
 - **Storage policies** — les règles d'accès du bucket `documents` (public/private, select/list/read/insert/delete) doivent être auditées manuellement dans Supabase Studio.
-- **Rate-limit / anti-spam** — aucune protection sur les formulaires ou routes publiques (création dossier, upload, lead rapport, demande validation, notification webhook).
 - **Captcha** — non installé sur les formulaires publics.
-- **Webhook secret / signature partagée** — la route `notify` n'est pas durcie par secret partagé côté appelant ou côté destinataire.
 - **Purge Storage / orphelins** — un blob téléversé puis "retiré" côté UI reste dans le bucket `documents`. Aucune routine de purge planifiée. Aucune politique de conservation explicite des documents et des cessions.
 - **OCR** — les PDF scannés restent non exploitables.
 - **Branchement IA / Anthropic** — `ANTHROPIC_API_KEY` est documentée comme réservée mais non utilisée. Le rapport reste alimenté par les blocs hardcodés + la synthèse documentaire indicative V2-26.
@@ -236,7 +237,8 @@ V2-33 neutralise deux routes legacy visibles (`/upload`, `/analyse`) et clarifie
 | V2-31 | ✅ Sécurisation minimale TypeScript + clarification `.env.example` |
 | V2-32 | ✅ Diagnostic pré-production des risques avant exposition publique |
 | V2-33 | ✅ Neutralisation des routes legacy `/upload` et `/analyse` + recommandation de protection globale de déploiement |
-| V2-34 | Authentification / sécurisation du dossier par session ou token |
+| V2-34 | ✅ Anti-abus minimal : rate-limit mémoire, plafonds extraction PDF, webhook durci, limites upload MVP |
+| V2-35 | Authentification / sécurisation du dossier par session ou token |
 
 ---
 

@@ -7,7 +7,10 @@ import DossierStepper from "../DossierStepper";
 
 const IS_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const TAILLE_MAX_OCTETS = 10 * 1024 * 1024;
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_FILES_PER_BATCH = 10;
+const MAX_BATCH_SIZE_BYTES = 30 * 1024 * 1024;
+const ACCEPTED_EXTENSIONS = new Set(["pdf", "doc", "docx", "xls", "xlsx"]);
 
 type StatutFichier = "attente" | "telechargement" | "televerse" | "erreur";
 
@@ -34,11 +37,20 @@ function formatTaille(octets: number): string {
   return `${(octets / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
+function getExtension(fileName: string): string {
+  const parts = fileName.toLowerCase().split(".");
+  return parts.length > 1 ? parts[parts.length - 1] ?? "" : "";
+}
+
+function estExtensionAutorisee(fileName: string): boolean {
+  return ACCEPTED_EXTENSIONS.has(getExtension(fileName));
+}
+
 function BadgeStatut({ statut }: { statut: StatutFichier }) {
   if (statut === "attente")
     return <span className="text-muted-foreground">En attente…</span>;
   if (statut === "telechargement")
-    return <span className="text-blue-600 font-medium">Téléversement…</span>;
+    return <span className="font-medium text-blue-600">Téléversement…</span>;
   if (statut === "televerse")
     return (
       <span className="font-medium text-confidence-high">Téléversé ✓</span>
@@ -51,6 +63,7 @@ export default function DossierDocumentsPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [fichiers, setFichiers] = useState<FichierLocal[]>([]);
   const [refus, setRefus] = useState<string[]>([]);
+  const [messageRefus, setMessageRefus] = useState<string | null>(null);
 
   const modeReel = IS_UUID.test(id);
 
@@ -76,33 +89,84 @@ export default function DossierDocumentsPage() {
     }
   };
 
+  const uploadFichiers = async (items: FichierLocal[]) => {
+    for (const item of items) {
+      await uploadFichier(item.nom, item.file);
+    }
+  };
+
   const handleSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
     const tous = Array.from(event.target.files ?? []);
-    const trop_lourds = tous.filter((f) => f.size > TAILLE_MAX_OCTETS);
-    const acceptes = tous.filter((f) => f.size <= TAILLE_MAX_OCTETS);
 
-    if (trop_lourds.length > 0) {
-      setRefus(trop_lourds.map((f) => f.name));
+    if (tous.length === 0) {
+      return;
+    }
+
+    if (tous.length > MAX_FILES_PER_BATCH) {
+      setMessageRefus(
+        `Pour cette démo, limitez chaque sélection à ${MAX_FILES_PER_BATCH} fichiers maximum.`
+      );
+      setRefus(tous.map((f) => f.name));
+      event.target.value = "";
+      return;
+    }
+
+    const tailleTotale = tous.reduce((total, file) => total + file.size, 0);
+    if (tailleTotale > MAX_BATCH_SIZE_BYTES) {
+      setMessageRefus(
+        "Le lot sélectionné dépasse 30 Mo. Réduisez le nombre de fichiers ou leur taille avant de réessayer."
+      );
+      setRefus(tous.map((f) => f.name));
+      event.target.value = "";
+      return;
+    }
+
+    const nonPrisEnCharge = tous.filter((f) => !estExtensionAutorisee(f.name));
+    const tropLourds = tous.filter(
+      (f) => estExtensionAutorisee(f.name) && f.size > MAX_FILE_SIZE_BYTES
+    );
+    const acceptes = tous.filter(
+      (f) => estExtensionAutorisee(f.name) && f.size <= MAX_FILE_SIZE_BYTES
+    );
+
+    const nomsExistants = new Set(fichiers.map((f) => f.nom));
+    const doublons = acceptes.filter((f) => nomsExistants.has(f.name));
+    const nouveaux: FichierLocal[] = acceptes
+      .filter((f) => !nomsExistants.has(f.name))
+      .map((f) => ({
+        nom: f.name,
+        taille: f.size,
+        type: f.type || "inconnu",
+        statut: "attente",
+        file: f,
+      }));
+
+    const refusCourants = [
+      ...nonPrisEnCharge.map((f) => f.name),
+      ...tropLourds.map((f) => f.name),
+      ...doublons.map((f) => f.name),
+    ];
+
+    if (refusCourants.length > 0) {
+      setMessageRefus(
+        "Certains fichiers n'ont pas été retenus. Utilisez jusqu'à 10 fichiers PDF, Word ou Excel, 10 Mo maximum par fichier et 30 Mo maximum par lot. Les images scannées ne sont pas encore exploitables automatiquement."
+      );
+      setRefus([...new Set(refusCourants)]);
     } else {
+      setMessageRefus(null);
       setRefus([]);
     }
 
-    const nouveaux: FichierLocal[] = acceptes.map((f) => ({
-      nom: f.name,
-      taille: f.size,
-      type: f.type || "inconnu",
-      statut: "attente",
-      file: f,
-    }));
+    if (nouveaux.length === 0) {
+      event.target.value = "";
+      return;
+    }
 
-    setFichiers((prev) => {
-      const nomsExistants = new Set(prev.map((f) => f.nom));
-      const filtres = nouveaux.filter((f) => !nomsExistants.has(f.nom));
-      if (modeReel) {
-        filtres.forEach((f) => uploadFichier(f.nom, f.file));
-      }
-      return [...prev, ...filtres];
-    });
+    setFichiers((prev) => [...prev, ...nouveaux]);
+
+    if (modeReel) {
+      void uploadFichiers(nouveaux);
+    }
 
     event.target.value = "";
   };
@@ -134,21 +198,22 @@ export default function DossierDocumentsPage() {
       </div>
 
       <section
-        className="rounded-lg border-2 border-dashed border-border bg-gray-50 p-10 text-center space-y-4 cursor-pointer hover:border-navy-700 transition-colors"
+        className="space-y-4 rounded-lg border-2 border-dashed border-border bg-gray-50 p-10 text-center transition-colors hover:border-navy-700 cursor-pointer"
         onClick={() => inputRef.current?.click()}
       >
         <p className="text-lg font-semibold text-navy-900">
           Sélectionner des documents
         </p>
         <p className="text-sm text-muted-foreground">
-          PDF, Word, Excel et images acceptés — plusieurs fichiers possibles —
-          10 Mo max par fichier.
+          PDF, Word et Excel acceptés — jusqu&apos;à 10 fichiers par sélection
+          — 10 Mo max par fichier — 30 Mo max par lot. Les images scannées ne
+          sont pas encore lisibles automatiquement.
         </p>
         <input
           ref={inputRef}
           type="file"
           multiple
-          accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+          accept=".pdf,.doc,.docx,.xls,.xlsx"
           className="hidden"
           onChange={handleSelection}
         />
@@ -164,16 +229,16 @@ export default function DossierDocumentsPage() {
         </button>
       </section>
 
-      {refus.length > 0 && (
+      {messageRefus && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-          <p className="font-medium">
-            Fichier{refus.length > 1 ? "s" : ""} ignoré{refus.length > 1 ? "s" : ""} (dépassent 10 Mo) :
-          </p>
-          <ul className="mt-1 list-disc list-inside">
-            {refus.map((nom) => (
-              <li key={nom}>{nom}</li>
-            ))}
-          </ul>
+          <p className="font-medium">{messageRefus}</p>
+          {refus.length > 0 && (
+            <ul className="mt-2 list-inside list-disc">
+              {refus.map((nom) => (
+                <li key={nom}>{nom}</li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
@@ -200,7 +265,7 @@ export default function DossierDocumentsPage() {
                 <button
                   type="button"
                   onClick={() => retirerFichier(fichier.nom)}
-                  className="ml-4 shrink-0 text-sm text-muted-foreground hover:text-red-600 transition-colors"
+                  className="ml-4 shrink-0 text-sm text-muted-foreground transition-colors hover:text-red-600"
                 >
                   Retirer
                 </button>
@@ -222,7 +287,7 @@ export default function DossierDocumentsPage() {
       </div>
 
       <section className="grid gap-8 lg:grid-cols-[1fr_0.9fr]">
-        <div className="rounded-lg border border-border bg-white p-6 space-y-4">
+        <div className="space-y-4 rounded-lg border border-border bg-white p-6">
           <h2 className="text-xl font-semibold text-navy-900">
             Pièces attendues à ce stade
           </h2>
@@ -233,14 +298,16 @@ export default function DossierDocumentsPage() {
           </ul>
         </div>
 
-        <div className="rounded-lg border border-border bg-white p-6 space-y-4">
+        <div className="space-y-4 rounded-lg border border-border bg-white p-6">
           <h2 className="text-xl font-semibold text-navy-900">
             Ce que le moteur analysera ensuite
           </h2>
           <p className="text-sm text-muted-foreground">
             Bail, Kbis, bilans, contrats, bulletins, pièces fiscales et
             compromis s&apos;il existe, pour produire une classification, une
-            checklist et des points d&apos;attention.
+            checklist et des points d&apos;attention. Les images scannées
+            devront être converties en documents exploitables ou vérifiées
+            manuellement.
           </p>
         </div>
       </section>
