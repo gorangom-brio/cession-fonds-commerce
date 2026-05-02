@@ -53,6 +53,7 @@ Le tunnel fonctionne en **deux modes** :
 - **Dashboard dossier réel** (V2-28) : `/dossiers/[id]` est désormais un server component qui lit `getCessionById` + `getDocumentsByCessionId` en `Promise.all`. Quatre cartes de synthèse alimentées par les données réelles (Documents déposés/classifiés/à vérifier · PDF exploitables/scannés/en attente · Questionnaire n/5 · Avancement). Section "Prochaines actions" limitée à 3 actions dérivées de règles simples. Mode démo et fallback Supabase indisponible préservés. Aucun affichage de donnée personnelle, aucune table nouvelle.
 - **Validation avocat persistée** (V2-29) : nouvelle table `validation_requests` (id, cession_id, dossier_id, nom, email, telephone, message, consentement, source, statut, created_at). RLS activée : `INSERT` ouvert à `anon`, aucune lecture client — la lecture passe par la clé service-role côté serveur. La page `/dossiers/[id]/validation-avocat` persiste réellement la demande au submit avec fallback `try/catch` (UX non bloquée). Le dashboard affiche désormais "Validation avocat : demandée le JJ/MM/AAAA" si une demande existe, sinon "non demandée". Aucun envoi email automatique, aucun engagement d'avocat.
 - **Notification interne webhook** (V2-30) : nouvelle route `POST /api/validation-requests/notify` qui forward un payload formaté (`{ type, subject, dossier_id, nom, email, telephone, message, created_at, lien_dossier, mention }`) vers `VALIDATION_NOTIFY_WEBHOOK_URL` (Make / Zapier / n8n / Slack). Aucun document, texte extrait ou storage_path n'est transmis. Appel client en *fire-and-forget* après l'insert ; la base reste source de vérité. Timeout 5 s, fallback silencieux si webhook absent ou indisponible. `APP_BASE_URL` (server-side, sans préfixe `NEXT_PUBLIC_`) optionnelle pour construire le lien_dossier ; à défaut, dérivé des headers de la requête.
+- **Sécurisation minimale TypeScript et `.env.example`** (V2-31) : correction des erreurs `tsc --noEmit` dans `lib/supabase/client.ts` (helper `getEnv` qui narrow `string | undefined → string`, type alias `BrowserClient = ReturnType<typeof createClient<Database>>` à la place de `SupabaseClient<Database>` incompatible depuis `@supabase/supabase-js@2.47`). Aucune signature publique modifiée, aucun changement fonctionnel du tunnel audit-first et aucun changement visible pour l'utilisateur. La correction porte uniquement sur le typage et la validation des variables d'environnement côté client Supabase. `.env.example` réorganisé en *Obligatoires* (3 vars Supabase) / *Optionnelles* (Anthropic réservée future IA, webhook notification, app base URL) avec mention explicite de la nécessité en production de `VALIDATION_NOTIFY_WEBHOOK_URL`.
 - Stepper de progression sur toutes les pages `[id]/*`.
 
 ---
@@ -201,6 +202,23 @@ Le questionnaire sert uniquement à **adapter l'affichage** de la checklist. Il 
 
 ---
 
+## Risques production non résolus par V2-31
+
+V2-31 a stabilisé la chaîne TypeScript et clarifié `.env.example`. Cette mission **n'a pas résolu** les risques suivants, qui restent ouverts pour des V2 ultérieures avant toute mise en production sérieuse :
+
+- **Authentification utilisateur** — l'IDOR sur UUID reste possible (toute personne avec l'UUID accède au dossier complet, déclenche les routes API, soumet une demande). Hors périmètre V2-31.
+- **RLS Supabase complète** — RLS active uniquement sur `report_leads` et `validation_requests` (INSERT anon, aucune lecture client). Les politiques `cessions` et `documents` doivent être vérifiées et durcies en Studio Supabase avant production.
+- **Rate-limit / anti-spam** — aucune protection sur les formulaires (création dossier, upload, lead rapport, demande validation, notification webhook). Risque d'abus de la clé anon et de la route notify.
+- **Captcha** — non installé sur les formulaires publics.
+- **Purge Storage / orphelins** — un blob téléversé puis "retiré" côté UI reste dans le bucket `documents`. Aucune routine de purge planifiée. Aucune politique de conservation explicite des documents et des cessions.
+- **OCR** — les PDF scannés restent non exploitables.
+- **Branchement IA / Anthropic** — `ANTHROPIC_API_KEY` est documentée comme réservée mais non utilisée. Le rapport reste alimenté par les blocs hardcodés + la synthèse documentaire indicative V2-26.
+- **Durcissement routes API** — pas de limite de taille de payload sur `notify`, pas de plafonnement du nombre de PDF traités en parallèle sur `extract-text` / `structured-extraction` (risque OOM Vercel sur gros volume), pas de signature partagée entre la route et le webhook tiers.
+- **Monitoring / alerting** — `console.warn` invisible sans agrégateur (Sentry, Datadog, Logflare…).
+- **Production hardening complet** — CGU, politique de confidentialité, mention sous-traitants, durées de conservation par table à formaliser.
+
+---
+
 ## Prochaines étapes recommandées
 
 | Mission | Objectif |
@@ -212,7 +230,8 @@ Le questionnaire sert uniquement à **adapter l'affichage** de la checklist. Il 
 | V2-28 | ✅ Dashboard dossier réel basé sur cession + documents + situation_declaree |
 | V2-29 | ✅ Demande de validation avocat persistée en base (table `validation_requests`) |
 | V2-30 | ✅ Notification interne webhook (Make / Slack / Zapier / n8n) au submit |
-| V2-31 | Authentification / sécurisation du dossier par session |
+| V2-31 | ✅ Sécurisation minimale TypeScript + clarification `.env.example` |
+| V2-32 | Authentification / sécurisation du dossier par session |
 
 ---
 

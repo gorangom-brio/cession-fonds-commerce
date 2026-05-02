@@ -1,15 +1,17 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../database.types";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl) {
-  throw new Error("NEXT_PUBLIC_SUPABASE_URL est manquante");
-}
-
-if (!supabaseAnonKey) {
-  throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY est manquante");
+/**
+ * Lit une variable d'environnement et garantit un retour `string` strict.
+ * Throw au premier appel si la variable est absente — le narrowing
+ * `string | undefined → string` est ainsi propagé correctement à TypeScript.
+ */
+function getEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} est manquante`);
+  }
+  return value;
 }
 
 type CessionRow = Database["public"]["Tables"]["cessions"]["Row"];
@@ -19,17 +21,28 @@ type ReportLeadInsert = Database["public"]["Tables"]["report_leads"]["Insert"];
 type ValidationRequestInsert =
   Database["public"]["Tables"]["validation_requests"]["Insert"];
 
-let browserClient: SupabaseClient<Database> | null = null;
+/**
+ * Type dérivé du retour réel de `createClient<Database>` (V2-31).
+ * Évite l'incompatibilité avec `SupabaseClient<Database>` qui ne renseigne
+ * qu'un seul des 4 paramètres génériques attendus depuis `@supabase/supabase-js@2.47`.
+ */
+type BrowserClient = ReturnType<typeof createClient<Database>>;
 
-function getSupabaseClient(): SupabaseClient<Database> {
+let browserClient: BrowserClient | null = null;
+
+function getSupabaseClient(): BrowserClient {
   if (!browserClient) {
-    browserClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-    });
+    browserClient = createClient<Database>(
+      getEnv("NEXT_PUBLIC_SUPABASE_URL"),
+      getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      }
+    );
   }
 
   return browserClient;
