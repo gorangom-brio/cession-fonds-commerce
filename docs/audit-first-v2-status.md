@@ -54,6 +54,7 @@ Le tunnel fonctionne en **deux modes** :
 - **Validation avocat persistée** (V2-29) : nouvelle table `validation_requests` (id, cession_id, dossier_id, nom, email, telephone, message, consentement, source, statut, created_at). RLS activée : `INSERT` ouvert à `anon`, aucune lecture client — la lecture passe par la clé service-role côté serveur. La page `/dossiers/[id]/validation-avocat` persiste réellement la demande au submit avec fallback `try/catch` (UX non bloquée). Le dashboard affiche désormais "Validation avocat : demandée le JJ/MM/AAAA" si une demande existe, sinon "non demandée". Aucun envoi email automatique, aucun engagement d'avocat.
 - **Notification interne webhook** (V2-30) : nouvelle route `POST /api/validation-requests/notify` qui forward un payload formaté (`{ type, subject, dossier_id, nom, email, telephone, message, created_at, lien_dossier, mention }`) vers `VALIDATION_NOTIFY_WEBHOOK_URL` (Make / Zapier / n8n / Slack). Aucun document, texte extrait ou storage_path n'est transmis. Appel client en *fire-and-forget* après l'insert ; la base reste source de vérité. Timeout 5 s, fallback silencieux si webhook absent ou indisponible. `APP_BASE_URL` (server-side, sans préfixe `NEXT_PUBLIC_`) optionnelle pour construire le lien_dossier ; à défaut, dérivé des headers de la requête.
 - **Sécurisation minimale TypeScript et `.env.example`** (V2-31) : correction des erreurs `tsc --noEmit` dans `lib/supabase/client.ts` (helper `getEnv` qui narrow `string | undefined → string`, type alias `BrowserClient = ReturnType<typeof createClient<Database>>` à la place de `SupabaseClient<Database>` incompatible depuis `@supabase/supabase-js@2.47`). Aucune signature publique modifiée, aucun changement fonctionnel du tunnel audit-first et aucun changement visible pour l'utilisateur. La correction porte uniquement sur le typage et la validation des variables d'environnement côté client Supabase. `.env.example` réorganisé en *Obligatoires* (3 vars Supabase) / *Optionnelles* (Anthropic réservée future IA, webhook notification, app base URL) avec mention explicite de la nécessité en production de `VALIDATION_NOTIFY_WEBHOOK_URL`.
+- **Neutralisation des routes legacy avant démo** (V2-33) : les anciennes routes `/upload` et `/analyse` sont neutralisées et redirigées côté serveur vers `/dossiers/new`. Cela supprime deux surfaces obsolètes qui créaient ou lisaient des dossiers hors du tunnel V2 et affichaient encore une promesse d'analyse IA legacy. Aucun comportement du tunnel audit-first principal (`/dossiers/*`) n'est modifié. Aucune authentification ajoutée, aucune policy RLS modifiée, aucune migration, aucun changement Supabase. La recommandation reste inchangée : activer une **protection globale de déploiement** avant toute démo publique ou semi-publique.
 - Stepper de progression sur toutes les pages `[id]/*`.
 
 ---
@@ -202,20 +203,22 @@ Le questionnaire sert uniquement à **adapter l'affichage** de la checklist. Il 
 
 ---
 
-## Risques production non résolus par V2-31
+## Risques production non résolus par V2-33
 
-V2-31 a stabilisé la chaîne TypeScript et clarifié `.env.example`. Cette mission **n'a pas résolu** les risques suivants, qui restent ouverts pour des V2 ultérieures avant toute mise en production sérieuse :
+V2-33 neutralise deux routes legacy visibles (`/upload`, `/analyse`) et clarifie l'exigence de protection globale de déploiement avant démonstration. Cette mission **ne résout pas** les sujets suivants, qui restent ouverts avant toute exposition publique ou semi-publique plus large :
 
-- **Authentification utilisateur** — l'IDOR sur UUID reste possible (toute personne avec l'UUID accède au dossier complet, déclenche les routes API, soumet une demande). Hors périmètre V2-31.
-- **RLS Supabase complète** — RLS active uniquement sur `report_leads` et `validation_requests` (INSERT anon, aucune lecture client). Les politiques `cessions` et `documents` doivent être vérifiées et durcies en Studio Supabase avant production.
-- **Rate-limit / anti-spam** — aucune protection sur les formulaires (création dossier, upload, lead rapport, demande validation, notification webhook). Risque d'abus de la clé anon et de la route notify.
+- **Authentification complète** — l'accès au tunnel reste sans session utilisateur dédiée.
+- **Accès dossier par token** — aucun secret par dossier ni URL signée n'est ajouté en V2-33.
+- **RLS Supabase complète** — RLS active uniquement sur `report_leads` et `validation_requests` (INSERT anon, aucune lecture client). Les politiques `cessions` et `documents` doivent toujours être vérifiées et durcies en Studio Supabase.
+- **Storage policies** — les règles d'accès du bucket `documents` (public/private, select/list/read/insert/delete) doivent être auditées manuellement dans Supabase Studio.
+- **Rate-limit / anti-spam** — aucune protection sur les formulaires ou routes publiques (création dossier, upload, lead rapport, demande validation, notification webhook).
 - **Captcha** — non installé sur les formulaires publics.
+- **Webhook secret / signature partagée** — la route `notify` n'est pas durcie par secret partagé côté appelant ou côté destinataire.
 - **Purge Storage / orphelins** — un blob téléversé puis "retiré" côté UI reste dans le bucket `documents`. Aucune routine de purge planifiée. Aucune politique de conservation explicite des documents et des cessions.
 - **OCR** — les PDF scannés restent non exploitables.
 - **Branchement IA / Anthropic** — `ANTHROPIC_API_KEY` est documentée comme réservée mais non utilisée. Le rapport reste alimenté par les blocs hardcodés + la synthèse documentaire indicative V2-26.
-- **Durcissement routes API** — pas de limite de taille de payload sur `notify`, pas de plafonnement du nombre de PDF traités en parallèle sur `extract-text` / `structured-extraction` (risque OOM Vercel sur gros volume), pas de signature partagée entre la route et le webhook tiers.
+- **RGPD complet** — CGU, politique de confidentialité, base légale détaillée, durées de conservation et droit de suppression restent à formaliser pour une exposition publique.
 - **Monitoring / alerting** — `console.warn` invisible sans agrégateur (Sentry, Datadog, Logflare…).
-- **Production hardening complet** — CGU, politique de confidentialité, mention sous-traitants, durées de conservation par table à formaliser.
 
 ---
 
@@ -231,7 +234,9 @@ V2-31 a stabilisé la chaîne TypeScript et clarifié `.env.example`. Cette miss
 | V2-29 | ✅ Demande de validation avocat persistée en base (table `validation_requests`) |
 | V2-30 | ✅ Notification interne webhook (Make / Slack / Zapier / n8n) au submit |
 | V2-31 | ✅ Sécurisation minimale TypeScript + clarification `.env.example` |
-| V2-32 | Authentification / sécurisation du dossier par session |
+| V2-32 | ✅ Diagnostic pré-production des risques avant exposition publique |
+| V2-33 | ✅ Neutralisation des routes legacy `/upload` et `/analyse` + recommandation de protection globale de déploiement |
+| V2-34 | Authentification / sécurisation du dossier par session ou token |
 
 ---
 
