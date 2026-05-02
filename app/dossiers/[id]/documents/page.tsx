@@ -74,10 +74,86 @@ export default function DossierDocumentsPage() {
       )
     );
     try {
-      const { uploadDocument } = await import("@/lib/supabase/client");
-      const { classifierDocument } = await import("@/lib/document-classifier");
-      const categorie = classifierDocument(nom);
-      await uploadDocument(id, file, categorie);
+      // 1. Préparation côté serveur — la route génère storage_path,
+      //    classifie le document et crée une ligne pending en base.
+      const prepareRes = await fetch(
+        `/api/dossiers/${id}/documents/prepare-upload`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nom_fichier: file.name,
+            taille_octets: file.size,
+            mime_type: file.type || null,
+          }),
+        }
+      );
+
+      if (!prepareRes.ok) {
+        let detail = "";
+        try {
+          const j = (await prepareRes.json()) as { error?: string };
+          detail = j.error ?? "";
+        } catch {
+          // payload non JSON — on ignore
+        }
+        throw new Error(
+          `prepare HTTP ${prepareRes.status}${detail ? " — " + detail : ""}`
+        );
+      }
+
+      const prepared = (await prepareRes.json()) as {
+        upload_id?: string;
+        signed_url?: string;
+        token?: string;
+        storage_path?: string;
+      };
+
+      if (
+        !prepared.upload_id ||
+        !prepared.signed_url ||
+        !prepared.token ||
+        !prepared.storage_path
+      ) {
+        throw new Error("prepare réponse incomplète");
+      }
+
+      // 2. Upload direct vers Supabase Storage via signed URL (pas de clé anon).
+      const { getSupabaseClient } = await import("@/lib/supabase/client");
+      const { error: uploadError } = await getSupabaseClient()
+        .storage.from("documents")
+        .uploadToSignedUrl(prepared.storage_path, prepared.token, file, {
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw new Error(`upload signed URL : ${uploadError.message}`);
+      }
+
+      // 3. Finalisation côté serveur — vérifie l'existence Storage et bascule
+      //    la ligne en status='ready'.
+      const finalizeRes = await fetch(
+        `/api/dossiers/${id}/documents/finalize-upload`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ upload_id: prepared.upload_id }),
+        }
+      );
+
+      if (!finalizeRes.ok) {
+        let detail = "";
+        try {
+          const j = (await finalizeRes.json()) as { error?: string };
+          detail = j.error ?? "";
+        } catch {
+          // payload non JSON — on ignore
+        }
+        throw new Error(
+          `finalize HTTP ${finalizeRes.status}${detail ? " — " + detail : ""}`
+        );
+      }
+
       setFichiers((prev) =>
         prev.map((f) => (f.nom === nom ? { ...f, statut: "televerse" } : f))
       );

@@ -370,6 +370,57 @@ V2-37 termine la migration des écritures `cessions` côté serveur, sans touche
 
 ---
 
+## V2-38 — Upload documents en signed URL + metadata serveur
+
+V2-38 met fin à la dernière écriture browser sur Supabase via la clé anon : l'upload documents passe désormais par un flux en trois temps qui place la création de metadata sous service-role et utilise des signed upload URLs pour le binaire.
+
+### Flux d'upload
+
+1. **prepare-upload** — [`POST /api/dossiers/[id]/documents/prepare-upload`](app/api/dossiers/[id]/documents/prepare-upload/route.ts), runtime `nodejs`. Reçoit `{nom_fichier, taille_octets, mime_type?}`. Valide UUID dossier, payload, extension parmi `pdf|doc|docx|xls|xlsx`, taille ≤ 10 Mo, quotas serveur du dossier (≤ 50 documents et ≤ 100 Mo cumulés). Vérifie l'existence de la cession. Génère lui-même `storage_path` `${id}/${randomUUID()}-${safeName}` (anti-traversée par `sanitizeFileName`). Classifie le `type_document` via `classifierDocument(nom_fichier)`. INSERT une ligne `documents` en `status='pending'` via `supabaseAdmin`. Émet ensuite une signed upload URL avec `supabaseAdmin.storage.from('documents').createSignedUploadUrl(storage_path)`. Si la signed URL échoue, la ligne pending est nettoyée pour éviter un orphelin DB. Réponse `201` `{success, upload_id, signed_url, token, storage_path, type_document}`. Rate-limit `IP+route+id` 20 / 10 min.
+
+2. **upload signed URL** — Client. La page documents importe `getSupabaseClient` (désormais exporté) puis appelle `storage.from('documents').uploadToSignedUrl(storage_path, token, file, {upsert:false})`. Le binaire transite directement vers Storage : la clé anon n'est plus utilisée pour s'authentifier (le token signé suffit). Pas de passage par la route Next.js, donc aucune limite de body Vercel.
+
+3. **finalize-upload** — [`POST /api/dossiers/[id]/documents/finalize-upload`](app/api/dossiers/[id]/documents/finalize-upload/route.ts), runtime `nodejs`. Reçoit `{upload_id}`. Valide UUID dossier et UUID `upload_id`. Vérifie que la cession existe et que la ligne `documents` correspond bien (`id = upload_id AND cession_id = id`). Si déjà `status='ready'`, réponse idempotente `200`. Sinon, vérifie l'existence de l'objet Storage via `storage.from('documents').list(prefix, {search: filename})` ; si absent, `404` (la ligne `pending` reste pour audit / retry, pas de delete automatique). Si présent, `update documents set status='ready'`. Réponse `200` `{success, document_id, nom_fichier, type_document, taille_octets}`. `storage_path` n'est jamais renvoyé au client. Rate-limit `IP+route+id` 20 / 10 min.
+
+### Migration `documents.status`
+
+[`supabase/migrations/20260502_documents_pending_status.sql`](supabase/migrations/20260502_documents_pending_status.sql) ajoute une colonne `status text not null default 'ready' check (status in ('pending','ready'))` et un index `(status, created_at)`. Le default `'ready'` garantit la rétrocompatibilité : les lignes existantes restent visibles sans backfill, les routes d'extraction continuent de les voir. Aucune policy n'est modifiée par cette migration.
+
+### Page documents et helpers
+
+- [`app/dossiers/[id]/documents/page.tsx`](app/dossiers/[id]/documents/page.tsx) : `uploadFichier` enchaîne `fetch('/prepare-upload')` → `uploadToSignedUrl` → `fetch('/finalize-upload')` séquentiellement. Les limites UI V2-34 (10 fichiers / 30 Mo par lot, 10 Mo / fichier, extensions PDF / Word / Excel) sont conservées. Tout échec à l'une des trois étapes bascule l'item en `statut='erreur'` avec un `console.warn` détaillé (HTTP + message serveur).
+- [`lib/supabase/client.ts`](lib/supabase/client.ts) : suppression de `uploadDocument`. `getSupabaseClient` devient exporté pour être consommé par la page documents au moment de l'upload signed URL. Les helpers dormants `getCession`, `getDocuments`, `deleteDocument` sont conservés (hors périmètre).
+
+### Hors périmètre V2-38
+
+- **Aucune policy fermée** : `documents_insert_anon`, `documents_select_*`, Storage `INSERT to anon`, etc. restent actives — fermeture programmée en V2-38b après audit Studio et soak.
+- **Aucune purge automatique** des lignes `pending` orphelines : à introduire en V2-38b (CRON / `pg_cron` / route admin).
+- **Routes V2-35/V2-36/V2-37** : aucune modification.
+- **Routes d'extraction PDF** : aucune modification ; elles continuent de filtrer par `cession_id` et n'ont pas besoin du nouveau `status` (les lignes pending n'ont pas de fichier exploitable, mais la fenêtre est courte ; un filtrage `status='ready'` côté extraction pourra être ajouté en V2-38b si nécessaire).
+- **Pas d'auth, pas de captcha, pas de `dossier_secret`**.
+
+### Cible V2-38b
+
+- Audit Supabase Studio des policies actuelles (`public.documents`, `storage.objects` bucket `documents`).
+- Migration `drop policy if exists "documents_insert_anon" on public.documents; revoke insert on public.documents from anon;` — les nouveaux flux V2-38 utilisent `supabaseAdmin`, donc la policy anon n'est plus nécessaire.
+- Migration ou action Studio fermant la policy Storage `INSERT to anon` (la signed URL ne dépend pas du rôle anon — elle ne nécessite qu'un token signé).
+- Purge des lignes `documents.status='pending'` plus vieilles de N heures + suppression de l'objet Storage correspondant si présent.
+- Optionnel : filtrer `status='ready'` dans `getDocumentsByCessionId`, `extract-text`, `structured-extraction` pour ignorer formellement les pending.
+
+### Dette restante après V2-38
+
+- **Policies anon `documents` et Storage** toujours ouvertes jusqu'à V2-38b — un attaquant peut continuer à insérer des documents ou uploader des objets directement avec la clé anon.
+- **Lignes `pending` orphelines** s'accumulent sans GC.
+- **Accès dossier par UUID** énumérable — pas de `dossier_secret`, pas d'auth, pas de lien signé.
+- **Tables `cessions` et `documents` non versionnées** : la baseline RLS reste à apurer.
+- **Rate-limit en mémoire processus** non partagé.
+- **Captcha** absent.
+- **Authentification utilisateur** absente.
+- **Monitoring / alerting complet** absent.
+- **Helpers browser dormants** (`getCession`, `getDocuments`, `deleteDocument`) toujours présents.
+
+---
+
 ## Prochaines étapes recommandées
 
 | Mission | Objectif |
@@ -388,7 +439,9 @@ V2-37 termine la migration des écritures `cessions` côté serveur, sans touche
 | V2-35 | ✅ Déplacement côté serveur de `validation_requests` et `report_leads` (validation, vérification dossier, rate-limit, webhook serveur unifié) |
 | V2-36 | ✅ Neutralisation 410 Gone de `/api/validation-requests/notify` + fermeture des policies RLS `*_insert_anon` et révocation INSERT anon sur les deux tables |
 | V2-37 | ✅ Serveurisation de la création de dossier (`POST /api/dossiers`) et de la persistance du questionnaire (`PATCH /api/dossiers/[id]/situation`), avec validation stricte du shape `SituationDossier` |
-| V2-38 | Signed upload URL Storage + metadata `documents` côté serveur, audit / baseline RLS, éventuel `dossier_secret` |
+| V2-38 | ✅ Upload documents en signed URL + metadata serveur (prepare / upload / finalize), colonne `documents.status pending\|ready` |
+| V2-38b | Audit Supabase Studio + fermeture policies anon `documents` et Storage + purge orphelins `pending` |
+| V2-39 | Introduction d'un `dossier_secret` (transmission cookie httpOnly) ou première brique d'authentification |
 
 ---
 

@@ -277,6 +277,7 @@ export interface Database {
           analyse_effectuee: boolean;
           nb_caracteres_extraits: number | null;
           extraction_ok: boolean | null;
+          status: "pending" | "ready";
         };
         Insert: {
           id?: string;
@@ -289,6 +290,7 @@ export interface Database {
           analyse_effectuee?: boolean;
           nb_caracteres_extraits?: number | null;
           extraction_ok?: boolean | null;
+          status?: "pending" | "ready";
         };
         Update: {
           id?: string;
@@ -301,6 +303,7 @@ export interface Database {
           analyse_effectuee?: boolean;
           nb_caracteres_extraits?: number | null;
           extraction_ok?: boolean | null;
+          status?: "pending" | "ready";
         };
         Relationships: [
           {

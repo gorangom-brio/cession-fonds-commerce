@@ -24,8 +24,14 @@ type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 //
 // V2-37 : createCession et updateCession ont à leur tour été déplacés côté
 // serveur (routes POST /api/dossiers et PATCH /api/dossiers/[id]/situation).
-// Le seul helper d'écriture browser restant est `uploadDocument`, qui sera
-// traité en V2-38 (signed upload URL + metadata serveur).
+//
+// V2-38 : uploadDocument a été remplacé par un flux signed upload URL en
+// trois temps (POST /api/dossiers/[id]/documents/prepare-upload → PUT direct
+// vers Storage via uploadToSignedUrl → POST /api/dossiers/[id]/documents/finalize-upload).
+// `getSupabaseClient` reste exposé : il sert désormais uniquement à appeler
+// `storage.uploadToSignedUrl(path, token, file)` côté browser, qui n'utilise
+// pas la clé anon pour s'authentifier (le token signé suffit). La fermeture
+// des policies anon documents / Storage est réservée à V2-38b.
 
 /**
  * Type dérivé du retour réel de `createClient<Database>` (V2-31).
@@ -36,7 +42,7 @@ type BrowserClient = ReturnType<typeof createClient<Database>>;
 
 let browserClient: BrowserClient | null = null;
 
-function getSupabaseClient(): BrowserClient {
+export function getSupabaseClient(): BrowserClient {
   if (!browserClient) {
     browserClient = createClient<Database>(
       getEnv("NEXT_PUBLIC_SUPABASE_URL"),
@@ -68,47 +74,6 @@ export async function getCession(id: string): Promise<CessionRow> {
   }
 
   return data as CessionRow;
-}
-
-export async function uploadDocument(
-  cessionId: string,
-  file: File,
-  documentType?: string
-): Promise<DocumentRow> {
-  const safeFileName = file.name.replace(/\s+/g, "-");
-  const storagePath = `${cessionId}/${Date.now()}-${safeFileName}`;
-
-  const { error: uploadError } = await getSupabaseClient().storage
-    .from("documents")
-    .upload(storagePath, file, {
-      cacheControl: "3600",
-      upsert: false,
-    });
-
-  if (uploadError) {
-    throw new Error(`Erreur upload : ${uploadError.message}`);
-  }
-
-  const { data, error: dbError } = await getSupabaseClient()
-    .from("documents")
-    .insert({
-      cession_id: cessionId,
-      nom_fichier: file.name,
-      type_document: documentType ?? null,
-      storage_path: storagePath,
-      taille_octets: file.size,
-      analyse_effectuee: false,
-    })
-    .select()
-    .single();
-
-  if (dbError || !data) {
-    throw new Error(
-      `Erreur enregistrement document : ${dbError?.message ?? "aucune donnée renvoyée"}`
-    );
-  }
-
-  return data as DocumentRow;
 }
 
 export async function getDocuments(cessionId: string): Promise<DocumentRow[]> {
