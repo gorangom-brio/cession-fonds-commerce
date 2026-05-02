@@ -262,6 +262,59 @@ V2-35 réduit la surface d'écriture browser sur les deux tables PII les plus ex
 
 ---
 
+## V2-36 — Fermeture des anciennes portes
+
+V2-36 referme deux surfaces résiduelles laissées ouvertes par V2-35.
+
+### Route legacy neutralisée
+
+[`app/api/validation-requests/notify/route.ts`](app/api/validation-requests/notify/route.ts) ne lit plus Supabase, ne déclenche plus le webhook interne, n'utilise plus la clé service-role et n'applique plus de rate-limit. Tout `POST` ou `GET` répond `410 Gone` avec :
+
+```json
+{
+  "error": "deprecated_route",
+  "message": "Cette route legacy est désactivée. Utilisez /api/dossiers/[id]/validation-requests."
+}
+```
+
+et l'en-tête `Cache-Control: no-store`. Un éventuel client externe historique reçoit donc un signal HTTP standard et explicite. La route successeur (`POST /api/dossiers/[id]/validation-requests`, V2-35) reste le seul point d'entrée actif pour la persistence d'une demande de validation avocat et le déclenchement du webhook.
+
+### Migration RLS ciblée
+
+[`supabase/migrations/20260502_close_anon_insert_policies.sql`](supabase/migrations/20260502_close_anon_insert_policies.sql) ferme la porte SQL anonyme sur les deux tables désormais écrites uniquement côté serveur :
+
+- `drop policy if exists "validation_requests_insert_anon" on public.validation_requests;`
+- `drop policy if exists "report_leads_insert_anon" on public.report_leads;`
+- `revoke insert on public.validation_requests from anon;`
+- `revoke insert on public.report_leads from anon;`
+
+RLS reste activée sur les deux tables ; sans policy permissive, l'INSERT anon est refusé par défaut. Aucune nouvelle policy n'est créée (le tunnel n'utilise pas le rôle `authenticated`). La migration doit être appliquée via `supabase db push` ou via le SQL Editor de Supabase Studio.
+
+### Hors périmètre V2-36
+
+- **`cessions`** : `createCession` et `updateCession({ situation_declaree })` continuent d'écrire depuis le browser → fermeture reportée à une mission ultérieure (déplacement serveur préalable requis).
+- **`documents`** : `uploadDocument` continue d'insérer la metadata côté browser → idem.
+- **Storage `documents`** : politiques bucket inchangées ; un audit Supabase Studio reste nécessaire avant toute fermeture.
+- **Routes d'extraction PDF** (`extract-text`, `structured-extraction`) : aucune modification.
+- **Helpers browser** (`createCession`, `updateCession`, `uploadDocument`, helpers dormants) : aucune modification de `lib/supabase/client.ts`.
+- **Auth, captcha, monitoring** : aucune addition.
+
+### Dette restante après V2-36
+
+- **`createCession` / `updateCession({ situation_declaree })`** côté browser via la clé anon.
+- **`uploadDocument`** côté browser (Storage + table `documents`).
+- **Accès dossier par UUID** énumérable ; pas de token ni de signature de dossier.
+- **RLS `cessions` et `documents`** non versionnées dans `supabase/migrations/` : leur état effectif n'est connu qu'en Studio.
+- **Storage bucket `documents`** : public/private, policies INSERT/SELECT/DELETE et grants à figer manuellement avant tout durcissement.
+- **Rate-limit en mémoire processus** : non partagé entre instances serverless.
+- **Captcha** absent sur tous les formulaires publics.
+- **Authentification utilisateur** absente.
+- **Monitoring / alerting complet** absent (`console.warn` sans agrégateur).
+
+V2-36 supprime deux portes annexes mais ne change pas le verdict produit : la prochaine étape sécurité passe par la serveurisation des écritures `cessions` et `documents`, puis par un audit Storage et un éventuel passage en `createSignedUploadUrl`.
+
+---
+
 ## Prochaines étapes recommandées
 
 | Mission | Objectif |
@@ -278,7 +331,8 @@ V2-35 réduit la surface d'écriture browser sur les deux tables PII les plus ex
 | V2-33 | ✅ Neutralisation des routes legacy `/upload` et `/analyse` + recommandation de protection globale de déploiement |
 | V2-34 | ✅ Anti-abus minimal : rate-limit mémoire, plafonds extraction PDF, webhook durci, limites upload MVP |
 | V2-35 | ✅ Déplacement côté serveur de `validation_requests` et `report_leads` (validation, vérification dossier, rate-limit, webhook serveur unifié) |
-| V2-36 | Fermeture des policies RLS `*_insert_anon`, audit Storage, déplacement progressif des écritures `cessions`/`documents` côté serveur |
+| V2-36 | ✅ Neutralisation 410 Gone de `/api/validation-requests/notify` + fermeture des policies RLS `*_insert_anon` et révocation INSERT anon sur les deux tables |
+| V2-37 | Audit Supabase Studio (`cessions`, `documents`, Storage `documents`) puis déplacement progressif des écritures `cessions`/`documents` côté serveur |
 
 ---
 
