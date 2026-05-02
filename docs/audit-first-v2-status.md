@@ -223,6 +223,45 @@ V2-34 ajoute un lot défensif court pour plafonner, ralentir et filtrer certains
 
 ---
 
+## V2-35 — Déplacement côté serveur des écritures sensibles
+
+V2-35 déplace côté serveur les deux écritures Supabase qui transportent des données personnelles :
+
+- **`validation_requests`** : insertion désormais effectuée par la route `POST /api/dossiers/[id]/validation-requests`, qui orchestre dans le même appel l'insertion en base **et** le déclenchement du webhook interne. Les pages clientes ne disposent plus du chemin `insertValidationRequest` (helper supprimé de `lib/supabase/client.ts`).
+- **`report_leads`** : insertion désormais effectuée par la route `POST /api/dossiers/[id]/report-leads`. Helper `insertReportLead` également supprimé.
+
+Mécanismes communs aux deux nouvelles routes :
+
+- Validation stricte côté serveur (`nom`, `email`, `telephone`, `message`/`role`, `consentement` requis), avec longueurs maximales et expression régulière email.
+- Vérification de l'existence de la cession via `supabaseAdmin.from('cessions').select('id').eq('id', id).maybeSingle()`.
+- Rate-limit best-effort en mémoire processus (clé `IP + route + dossier_id`, 5 appels / 10 minutes), réutilisant le pattern V2-34.
+- Réponses HTTP normalisées : `400` payload invalide, `404` dossier inconnu, `429` rate-limit avec en-tête `Retry-After`, `500` indisponibilité Supabase, `201` succès.
+- Le secret webhook `VALIDATION_NOTIFY_SECRET` reste exclusivement côté serveur.
+- En cas d'échec du webhook, l'insertion en base est conservée et l'UX renvoie une confirmation positive (la base reste source de vérité).
+
+Pages clientes mises à jour :
+
+- [`app/dossiers/[id]/validation-avocat/page.tsx`](app/dossiers/[id]/validation-avocat/page.tsx) — un seul `fetch` vers la route serveur, suppression du double appel `Supabase + /api/validation-requests/notify`.
+- [`app/dossiers/[id]/rapport/page.tsx`](app/dossiers/[id]/rapport/page.tsx) — `fetch` vers la route serveur, court-circuit en mode démo (ID non UUID).
+
+Aucune migration Supabase n'est introduite par V2-35. Aucune politique RLS n'est fermée. La route legacy `app/api/validation-requests/notify/route.ts` est conservée intacte pour ne pas régresser un éventuel consommateur externe ; elle n'est plus appelée par les pages V2-35.
+
+### Dette restante après V2-35
+
+- **`createCession`** continue d'écrire `cessions` (status='draft') depuis le browser via la clé anon.
+- **`uploadDocument`** continue d'écrire le bucket Storage **et** la table `documents` depuis le browser.
+- **`updateCession({ situation_declaree })`** continue de mettre à jour `cessions` depuis le browser (debounce 800 ms).
+- **Policies RLS `report_leads_insert_anon` et `validation_requests_insert_anon`** restent ouvertes : à fermer en V2-36 une fois le soak des nouvelles routes confirmé.
+- **Storage** : politiques du bucket `documents` à auditer en Supabase Studio (hors versionnement Git).
+- **Accès dossier par UUID** non résolu : pas de token de dossier ni de signature.
+- **Rate-limit mémoire non distribué** : les compteurs sont par instance serverless et non partagés.
+- **Captcha** absent sur tous les formulaires publics.
+- **Authentification utilisateur** absente.
+
+V2-35 réduit la surface d'écriture browser sur les deux tables PII les plus exposées, mais ne suffit pas à considérer la production publique comme sécurisée.
+
+---
+
 ## Prochaines étapes recommandées
 
 | Mission | Objectif |
@@ -238,7 +277,8 @@ V2-34 ajoute un lot défensif court pour plafonner, ralentir et filtrer certains
 | V2-32 | ✅ Diagnostic pré-production des risques avant exposition publique |
 | V2-33 | ✅ Neutralisation des routes legacy `/upload` et `/analyse` + recommandation de protection globale de déploiement |
 | V2-34 | ✅ Anti-abus minimal : rate-limit mémoire, plafonds extraction PDF, webhook durci, limites upload MVP |
-| V2-35 | Authentification / sécurisation du dossier par session ou token |
+| V2-35 | ✅ Déplacement côté serveur de `validation_requests` et `report_leads` (validation, vérification dossier, rate-limit, webhook serveur unifié) |
+| V2-36 | Fermeture des policies RLS `*_insert_anon`, audit Storage, déplacement progressif des écritures `cessions`/`documents` côté serveur |
 
 ---
 

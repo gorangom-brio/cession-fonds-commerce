@@ -80,40 +80,36 @@ export default function DossierValidationAvocatPage() {
 
     setSubmitting(true);
     try {
-      const { insertValidationRequest } = await import(
-        "@/lib/supabase/client"
-      );
-      await insertValidationRequest({
-        cession_id: id,
-        dossier_id: id,
-        nom: champs.nom,
-        email: champs.email,
-        telephone: champs.telephone || null,
-        message: champs.message,
-        consentement: champs.consentement,
-        source: "rapport_validation_avocat",
-      });
-      setPersistanceOk(true);
-
-      // Notification interne (V2-30) — fire-and-forget, n'impacte pas l'UX.
-      // La demande reste tracée en base même si la notification échoue.
-      fetch("/api/validation-requests/notify", {
+      const res = await fetch(`/api/dossiers/${id}/validation-requests`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          dossier_id: id,
           nom: champs.nom,
           email: champs.email,
           telephone: champs.telephone || null,
           message: champs.message,
-          created_at: new Date().toISOString(),
+          consentement: champs.consentement,
         }),
-      }).catch(() => {
-        // silencieux — la base est la source de vérité
       });
+
+      if (res.ok) {
+        setPersistanceOk(true);
+      } else {
+        let detail = "";
+        try {
+          const j = (await res.json()) as { error?: string };
+          detail = j.error ?? "";
+        } catch {
+          // payload non JSON — on ignore
+        }
+        console.warn(
+          `[validation_requests] Demande non persistée (HTTP ${res.status}${detail ? " — " + detail : ""}).`
+        );
+        setPersistanceOk(false);
+      }
     } catch (err) {
       console.warn(
-        "[validation_requests] Demande non persistée (Supabase indisponible) :",
+        "[validation_requests] Demande non persistée (réseau indisponible) :",
         err
       );
       setPersistanceOk(false);

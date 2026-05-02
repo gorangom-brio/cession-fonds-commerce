@@ -17,9 +17,11 @@ function getEnv(name: string): string {
 type CessionRow = Database["public"]["Tables"]["cessions"]["Row"];
 type CessionUpdate = Database["public"]["Tables"]["cessions"]["Update"];
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
-type ReportLeadInsert = Database["public"]["Tables"]["report_leads"]["Insert"];
-type ValidationRequestInsert =
-  Database["public"]["Tables"]["validation_requests"]["Insert"];
+
+// V2-35 : insertReportLead et insertValidationRequest ont été déplacés côté
+// serveur (routes /api/dossiers/[id]/report-leads et
+// /api/dossiers/[id]/validation-requests). Aucun helper browser ne doit plus
+// écrire directement dans report_leads ou validation_requests.
 
 /**
  * Type dérivé du retour réel de `createClient<Database>` (V2-31).
@@ -142,28 +144,6 @@ export async function uploadDocument(
   }
 
   return data as DocumentRow;
-}
-
-export async function insertReportLead(lead: ReportLeadInsert): Promise<void> {
-  const { error } = await getSupabaseClient()
-    .from("report_leads")
-    .insert(lead);
-
-  if (error) {
-    throw new Error(`Erreur insertion lead : ${error.message}`);
-  }
-}
-
-export async function insertValidationRequest(
-  payload: ValidationRequestInsert
-): Promise<void> {
-  const { error } = await getSupabaseClient()
-    .from("validation_requests")
-    .insert(payload);
-
-  if (error) {
-    throw new Error(`Erreur insertion demande validation : ${error.message}`);
-  }
 }
 
 export async function getDocuments(cessionId: string): Promise<DocumentRow[]> {

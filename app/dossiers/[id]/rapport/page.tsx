@@ -118,21 +118,43 @@ export default function DossierRapportPage() {
     e.preventDefault();
     if (!peutSoumettre) return;
 
+    if (!modeReel) {
+      setPersistanceOk(false);
+      setEnvoye(true);
+      return;
+    }
+
     try {
-      const { insertReportLead } = await import("@/lib/supabase/client");
-      await insertReportLead({
-        dossier_id: id,
-        nom: champs.nom,
-        email: champs.email,
-        role: champs.role as "vendeur" | "acquereur" | "intermediaire" | "autre",
-        telephone: champs.telephone || null,
-        consentement_rapport: champs.consentementRapport,
-        consentement_recontact: champs.consentementRecontact,
-        source: "rapport_pdf_demo",
+      const res = await fetch(`/api/dossiers/${id}/report-leads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nom: champs.nom,
+          email: champs.email,
+          role: champs.role,
+          telephone: champs.telephone || null,
+          consentementRapport: champs.consentementRapport,
+          consentementRecontact: champs.consentementRecontact,
+        }),
       });
-      setPersistanceOk(true);
+
+      if (res.ok) {
+        setPersistanceOk(true);
+      } else {
+        let detail = "";
+        try {
+          const j = (await res.json()) as { error?: string };
+          detail = j.error ?? "";
+        } catch {
+          // payload non JSON — on ignore
+        }
+        console.warn(
+          `[report_leads] Lead non persisté (HTTP ${res.status}${detail ? " — " + detail : ""}).`
+        );
+        setPersistanceOk(false);
+      }
     } catch (err) {
-      console.warn("[report_leads] Lead non persisté (Supabase indisponible) :", err);
+      console.warn("[report_leads] Lead non persisté (réseau indisponible) :", err);
       setPersistanceOk(false);
     }
 
