@@ -100,15 +100,24 @@ export default function AuditChecklistSection({
       // Fallback localStorage toujours écrit (mode démo + fallback réseau)
       writeLocalSituation(dossierId, situation);
 
-      // Supabase uniquement en mode réel
+      // Persistance serveur uniquement en mode réel (V2-37)
       const IS_UUID =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!IS_UUID.test(dossierId)) return;
 
-      import("@/lib/supabase/client")
-        .then(({ updateCession }) =>
-          updateCession(dossierId, { situation_declaree: situation })
-        )
+      fetch(`/api/dossiers/${dossierId}/situation`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(situation),
+      })
+        .then((res) => {
+          if (!res.ok) {
+            // Échec silencieux — localStorage sert de fallback
+            console.warn(
+              `[situation_declaree] Persistance serveur échouée (HTTP ${res.status}).`
+            );
+          }
+        })
         .catch(() => {
           // Échec silencieux — localStorage sert de fallback
         });

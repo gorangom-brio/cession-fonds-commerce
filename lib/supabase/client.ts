@@ -15,13 +15,17 @@ function getEnv(name: string): string {
 }
 
 type CessionRow = Database["public"]["Tables"]["cessions"]["Row"];
-type CessionUpdate = Database["public"]["Tables"]["cessions"]["Update"];
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
 // V2-35 : insertReportLead et insertValidationRequest ont été déplacés côté
 // serveur (routes /api/dossiers/[id]/report-leads et
 // /api/dossiers/[id]/validation-requests). Aucun helper browser ne doit plus
 // écrire directement dans report_leads ou validation_requests.
+//
+// V2-37 : createCession et updateCession ont à leur tour été déplacés côté
+// serveur (routes POST /api/dossiers et PATCH /api/dossiers/[id]/situation).
+// Le seul helper d'écriture browser restant est `uploadDocument`, qui sera
+// traité en V2-38 (signed upload URL + metadata serveur).
 
 /**
  * Type dérivé du retour réel de `createClient<Database>` (V2-31).
@@ -50,22 +54,6 @@ function getSupabaseClient(): BrowserClient {
   return browserClient;
 }
 
-export async function createCession(): Promise<CessionRow> {
-  const { data, error } = await getSupabaseClient()
-    .from("cessions")
-    .insert({ status: "draft" })
-    .select()
-    .single();
-
-  if (error || !data) {
-    throw new Error(
-      `Erreur création cession : ${error?.message ?? "aucune donnée renvoyée"}`
-    );
-  }
-
-  return data as CessionRow;
-}
-
 export async function getCession(id: string): Promise<CessionRow> {
   const { data, error } = await getSupabaseClient()
     .from("cessions")
@@ -76,29 +64,6 @@ export async function getCession(id: string): Promise<CessionRow> {
   if (error || !data) {
     throw new Error(
       `Erreur lecture cession : ${error?.message ?? "cession introuvable"}`
-    );
-  }
-
-  return data as CessionRow;
-}
-
-export async function updateCession(
-  id: string,
-  updates: CessionUpdate
-): Promise<CessionRow> {
-  const { data, error } = await getSupabaseClient()
-    .from("cessions")
-    .update({
-      ...updates,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error || !data) {
-    throw new Error(
-      `Erreur mise à jour cession : ${error?.message ?? "aucune donnée renvoyée"}`
     );
   }
 

@@ -315,6 +315,61 @@ V2-36 supprime deux portes annexes mais ne change pas le verdict produit : la pr
 
 ---
 
+## V2-37 — Serveurisation `createCession` et `situation_declaree`
+
+V2-37 termine la migration des écritures `cessions` côté serveur, sans toucher au schéma ni introduire d'auth ou de `dossier_secret`.
+
+### Création de dossier
+
+[`POST /api/dossiers`](app/api/dossiers/route.ts) — runtime `nodejs`, rate-limit best-effort `IP+route` (5 / 10 min). Insère une cession via `supabaseAdmin` (`{status: "draft"}`), retourne `{success, id, created_at}` avec statut `201`. Aucun champ optionnel n'est encore persisté ; les inputs `nom` / `contexte` du formulaire restent locaux dans l'attente d'une décision produit. En cas d'erreur Supabase, la réponse est un `500` générique sans détail interne.
+
+[`app/dossiers/new/page.tsx`](app/dossiers/new/page.tsx) appelle désormais cette route via `fetch`. Le fallback `demo-${Date.now()}` est conservé : si le serveur renvoie `429`, `500` ou est injoignable, l'utilisateur retombe sur un identifiant local et conserve l'expérience offline.
+
+### Persistance du questionnaire de situation
+
+[`PATCH /api/dossiers/[id]/situation`](app/api/dossiers/[id]/situation/route.ts) — runtime `nodejs`, rate-limit `IP+route+id` (10 / 10 min, calibré sur le debounce 800 ms du composant client). La route :
+
+- valide le format UUID du dossier ;
+- accepte exclusivement les 5 clés du contrat `SituationDossier` (`salaries`, `locaux_loues`, `acquereur_type`, `marque_enseigne`, `activite_reglementee`) — toute clé inconnue déclenche un `400` ;
+- valide chaque valeur (`boolean | null` pour les booléennes, enum strict pour `acquereur_type`) ;
+- vérifie l'existence de la cession ;
+- `UPDATE cessions SET situation_declaree = …` via `supabaseAdmin`, **uniquement cette colonne** : aucune autre colonne du schéma `cessions` n'est jamais écrite, neutralisant le vecteur de corruption arbitraire qui existait avec l'ancien `updateCession()` browser.
+
+[`app/dossiers/[id]/audit/AuditChecklistSection.tsx`](app/dossiers/[id]/audit/AuditChecklistSection.tsx) appelle cette route via `fetch` après le debounce. Le fallback `localStorage` est conservé tel quel : si la persistance serveur échoue, l'utilisateur n'est pas bloqué et conserve ses réponses dans le navigateur.
+
+### Helpers browser nettoyés
+
+[`lib/supabase/client.ts`](lib/supabase/client.ts) — suppression des exports `createCession` et `updateCession` (et du type `CessionUpdate` associé). Conservation de `getSupabaseClient`, `uploadDocument`, `getCession`, `getDocuments`, `deleteDocument` (les trois derniers restent dormants en attendant V2-38). Une note V2-37 documente la migration.
+
+### Hors périmètre V2-37
+
+- **`uploadDocument`** : Storage + `documents` continuent d'être écrits côté browser via la clé anon — cible V2-38.
+- **Storage bucket `documents`** : aucune modification ; audit Studio reporté en V2-38.
+- **`dossier_secret`, auth, captcha** : non introduits.
+- **Routes V2-35 et V2-36** : aucune modification.
+- **Routes d'extraction PDF** : aucune modification.
+
+### Dette restante après V2-37
+
+- **`uploadDocument`** côté browser (Storage + table `documents`).
+- **Accès dossier par UUID** énumérable — pas de `dossier_secret`, pas d'auth, pas de lien signé.
+- **Tables `cessions` et `documents` non versionnées** — leur état RLS effectif n'est connu qu'en Studio.
+- **Bucket Storage `documents`** : public/private, policies INSERT/SELECT/DELETE et grants à figer manuellement avant tout durcissement.
+- **Helpers browser dormants** (`getCession`, `getDocuments`, `deleteDocument`) — conservés temporairement, à nettoyer au plus tard avec V2-38.
+- **Rate-limit en mémoire processus** non partagé entre instances serverless.
+- **Captcha** absent sur tous les formulaires publics.
+- **Authentification utilisateur** absente.
+- **Monitoring / alerting complet** absent.
+
+### Cible V2-38
+
+- `createSignedUploadUrl` côté serveur pour découpler l'upload du Storage anon.
+- Insertion metadata `documents` côté serveur (route dédiée `POST /api/dossiers/[id]/documents/metadata`).
+- Audit / baseline RLS Storage et tables `cessions` / `documents` (dump `pg_policies` versionné dans `supabase/migrations/` ou `docs/supabase-baseline.md`).
+- Éventuellement, introduction d'un `dossier_secret` (migration colonne + transmission cookie httpOnly) pour réduire l'énumérabilité de l'accès dossier.
+
+---
+
 ## Prochaines étapes recommandées
 
 | Mission | Objectif |
@@ -332,7 +387,8 @@ V2-36 supprime deux portes annexes mais ne change pas le verdict produit : la pr
 | V2-34 | ✅ Anti-abus minimal : rate-limit mémoire, plafonds extraction PDF, webhook durci, limites upload MVP |
 | V2-35 | ✅ Déplacement côté serveur de `validation_requests` et `report_leads` (validation, vérification dossier, rate-limit, webhook serveur unifié) |
 | V2-36 | ✅ Neutralisation 410 Gone de `/api/validation-requests/notify` + fermeture des policies RLS `*_insert_anon` et révocation INSERT anon sur les deux tables |
-| V2-37 | Audit Supabase Studio (`cessions`, `documents`, Storage `documents`) puis déplacement progressif des écritures `cessions`/`documents` côté serveur |
+| V2-37 | ✅ Serveurisation de la création de dossier (`POST /api/dossiers`) et de la persistance du questionnaire (`PATCH /api/dossiers/[id]/situation`), avec validation stricte du shape `SituationDossier` |
+| V2-38 | Signed upload URL Storage + metadata `documents` côté serveur, audit / baseline RLS, éventuel `dossier_secret` |
 
 ---
 

@@ -16,13 +16,30 @@ export default function NewDossierPage() {
     setSubmitting(true);
 
     try {
-      const { createCession } = await import("@/lib/supabase/client");
-      const cession = await createCession();
-      router.push(`/dossiers/${cession.id}`);
+      const res = await fetch("/api/dossiers", { method: "POST" });
+      if (res.ok) {
+        const data = (await res.json()) as { id?: string };
+        if (data?.id) {
+          router.push(`/dossiers/${data.id}`);
+          return;
+        }
+        console.warn("[dossiers/new] Réponse serveur sans id — fallback démo.");
+      } else {
+        let detail = "";
+        try {
+          const j = (await res.json()) as { error?: string };
+          detail = j.error ?? "";
+        } catch {
+          // payload non JSON — on ignore
+        }
+        console.warn(
+          `[dossiers/new] Création serveur échouée (HTTP ${res.status}${detail ? " — " + detail : ""}) — fallback démo.`
+        );
+      }
     } catch (err) {
-      console.warn("[dossiers/new] Création Supabase échouée, fallback démo :", err);
-      router.push(`/dossiers/demo-${Date.now()}`);
+      console.warn("[dossiers/new] Création serveur indisponible, fallback démo :", err);
     }
+    router.push(`/dossiers/demo-${Date.now()}`);
   };
 
   const peutCreer = nom.trim().length > 0;
